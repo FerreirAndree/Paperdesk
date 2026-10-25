@@ -24,4 +24,3 @@ foreach ($name in @('New paper note.lnk', 'Paperdesk.lnk', 'Paperdesk help.lnk')
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
 }
 Write-Host 'Paperdesk has been uninstalled. Your notes remain in %LOCALAPPDATA%/Paperdesk.'
-

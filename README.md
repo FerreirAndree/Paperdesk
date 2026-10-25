@@ -8,7 +8,7 @@ Paperdesk is a native C++ app with hand-drawn paper edges, soft shadows, and a f
 
 ## Use it
 
-Windows 10 or 11, x64. Download and extract a release ZIP, then run `Paperdesk.exe`. The first launch creates a note with a few gestures to get you started. Notes save automatically.
+Windows 10 or 11, x64. [Download the latest preview](https://github.com/FerreirAndree/Paperdesk/releases), extract the ZIP, then run `Paperdesk.exe`. The first launch creates a note with a few gestures to get you started. Notes save automatically.
 
 For a stable installation that restores your notes at sign-in, run this from the extracted folder in PowerShell:
 
@@ -101,5 +101,4 @@ The safety limits are 64 notes, 32 text blocks per note, 4096 UTF-16 code units 
 
 This first version supports typed text, not pen strokes, Markdown, images, reminders with alarms, or syncing. Text editing uses native selection, clipboard, undo, and input methods. Idle paper does not yet expose individual text blocks to screen readers. Multi-monitor and DPI handling are implemented, but need testing on more hardware.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and the manual verification checklist. MIT licensed.
-
+See the [verification report](docs/verification.md) for measurements and tested behaviour, and [CONTRIBUTING.md](CONTRIBUTING.md) for development and the manual checklist. MIT licensed.

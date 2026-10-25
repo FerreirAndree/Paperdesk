@@ -15,4 +15,3 @@ std::unique_ptr<Gdiplus::Bitmap> DrawNote(const Note& note, float scale, int hid
 bool Present(HWND window, const Note& note, float scale, int hiddenBlock = -1, bool full = false);
 void RenderPreview(const std::wstring& path);
 }
-

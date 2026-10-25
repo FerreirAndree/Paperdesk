@@ -23,4 +23,3 @@ add_test(NAME core COMMAND paperdesk_tests)
 add_executable(paperdesk_render_tests tests/render_tests.cpp src/render.cpp)
 target_link_libraries(paperdesk_render_tests PRIVATE paperdesk_core gdiplus user32 gdi32)
 add_test(NAME rendering COMMAND paperdesk_render_tests)
-

@@ -33,4 +33,3 @@ void Validate(const State& state);
 const wchar_t* StyleName(Style style);
 Style ParseStyle(std::wstring_view text);
 }
-

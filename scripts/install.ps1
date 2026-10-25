@@ -35,4 +35,3 @@ if (-not $NoStartup) { Start-Process -FilePath $target -ArgumentList '--startup'
 if (-not $NoLaunch) { Start-Process -FilePath $target -ArgumentList '--restore' -WindowStyle Hidden }
 Write-Host "Installed to $target"
 Write-Host 'Launch New paper note from Start or your launcher. Ctrl+Alt+N also creates a note.'
-

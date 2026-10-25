@@ -14,4 +14,3 @@ private:
 };
 std::filesystem::path DefaultDirectory();
 }
-

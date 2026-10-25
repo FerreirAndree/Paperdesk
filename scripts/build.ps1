@@ -35,4 +35,3 @@ try {
     }
 } finally { Pop-Location }
 Write-Host "Built $build/Paperdesk.exe"
-

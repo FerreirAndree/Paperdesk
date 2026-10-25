@@ -35,4 +35,3 @@ The file format starts with `PAPERDESK 1`, followed by a note count. Each note s
 - [Window relationships and Z-order](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features)
 - [SetWinEventHook](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwineventhook)
 - [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
-

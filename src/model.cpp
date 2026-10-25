@@ -114,4 +114,3 @@ State Decode(std::string_view bytes) {
     return state;
 }
 }
-

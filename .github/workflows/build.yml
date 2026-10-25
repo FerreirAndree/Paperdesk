@@ -24,4 +24,3 @@ jobs:
           path: |
             dist/*.zip
             dist/*.sha256
-

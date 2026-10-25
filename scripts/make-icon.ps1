@@ -34,4 +34,3 @@ try {
 } finally {
     $writer.Dispose(); $stream.Dispose(); $pen.Dispose(); $fold.Dispose(); $paper.Dispose(); $shadow.Dispose(); $graphics.Dispose(); $bitmap.Dispose()
 }
-
