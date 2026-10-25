@@ -283,9 +283,11 @@ void App::Layer() {
     if (!foreground) return; // Transient shell focus gap; the bounded retries handle it.
     foreground = GetAncestor(foreground, GA_ROOT);
     DWORD pid = 0; GetWindowThreadProcessId(foreground, &pid);
-    if (pid == GetCurrentProcessId()) return;
-    bool desktop = IsDesktop(foreground);
-    HWND desktopFront = desktop ? FrontDesktop() : nullptr;
+    HWND desktopFront = FrontDesktop();
+    // Show desktop may raise Explorer's desktop without changing foreground focus.
+    // In that case its Z-order, not the stale foreground HWND, is authoritative.
+    bool desktop = IsDesktop(foreground) || (desktopFront && Above(desktopFront, foreground));
+    if (pid == GetCurrentProcessId() && !desktop) return;
     for (auto& v : notes) {
         if (desktop) {
             if (!IsWindowVisible(v->window)) ShowWindow(v->window, SW_SHOWNOACTIVATE);

@@ -10,7 +10,7 @@ The controller receives display changes, session shutdown, foreground WinEvents,
 
 Windows does not publish an API for third-party wallpaper widgets. Reparenting into Explorer's `WorkerW` and the common `0x052C` shell-message technique rely on undocumented behaviour and are deliberately absent here.
 
-Paperdesk uses `SetWindowPos` to lower notes when a different app gains focus. If the desktop shell gains focus, notes are shown without activation and raised. They never use the topmost window band. This also lets the app recover from the shell bringing its desktop window forward.
+Paperdesk uses `SetWindowPos` to lower notes when a different app gains focus. If the desktop shell gains focus or is raised above the foreground window by Show desktop, notes are shown without activation and raised. Foreground focus can remain unchanged during that transition, so the frontmost visible Explorer desktop window is checked separately. Notes never use the topmost window band.
 
 This is an approximation of desktop attachment. When the desktop is foreground, a note can overlap a visible, unfocused application window. Selecting that application lowers the notes again. Task View, virtual desktops, Explorer replacements, and Show desktop behaviour can vary across Windows versions. They need manual verification on the target Windows build. Notes are not guaranteed to be visible in every shell transition.
 
