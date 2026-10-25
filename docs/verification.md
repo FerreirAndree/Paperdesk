@@ -6,7 +6,11 @@ The updated build passed 202 core checks and 62 rendering/layout checks. New cov
 
 A live lower-right corner drag shrank a note to 71.93% while preserving its three text lines, paper dimensions, font size, and block coordinates in the saved file. The updated executable has no global hotkey registration or hotkey handler. Launcher creation remains available.
 
-The desktop repair now handles shell show/hide/reorder events, root-window classification, the frontmost Explorer desktop window, bounded settling retries, and Peek exclusion. A manual Win+D confirmation is still pending. These changes are not yet evidence of a successful Show desktop test on this machine.
+The user tested version 0.1.1 with Win+D and reported that notes still disappear. The trace showed visible, non-minimised, uncloaked notes below Explorer's desktop despite ordinary Z-order raises.
+
+The follow-up candidate temporarily uses the topmost band while the desktop has focus and removes that status when an application gains focus. A new native integration test checks actual window styles, relative order, unchanged focus and geometry, and repeated elevation/demotion. Its windows are transparent and on-screen. The standalone run passed all 52 checks, alongside 202 core and 62 rendering checks. Initial runs immediately after compilation intermittently failed the elevation assertion; the standalone checks do not establish shell behaviour on every Windows build.
+
+The user confirmed that Win+D keeps the notes visible with this candidate, released as 0.1.2. The diagnostic trace also recorded elevation on desktop focus and removal of topmost status when an app regained focus.
 
 The measurements and initial interaction checks below describe version 0.1.0.
 
@@ -41,6 +45,6 @@ A release process with 20 notes used 32.46 MiB of working-set memory and 219 han
 
 ## Still needs hands-on coverage
 
-Physical mixed-DPI monitors, monitor disconnect/reconnect, pen/IME input, sleep/wake, sign-out/sign-in, Explorer restart, Task View, virtual desktops, and repeated Win+D transitions are not verified. The automated renderer checks at different scales do not substitute for physical DPI-transition tests. Modifier-drag gestures also remain on the manual checklist. Startup registration can be checked directly, but an actual sign-in cycle is required to confirm its timing.
+Physical mixed-DPI monitors, monitor disconnect/reconnect, pen/IME input, sleep/wake, sign-out/sign-in, Explorer restart, Task View, virtual desktops, and extended Win+D stress testing remain unverified. The automated renderer checks at different scales do not substitute for physical DPI-transition tests. Modifier-drag gestures also remain on the manual checklist. Startup registration can be checked directly, but an actual sign-in cycle is required to confirm its timing.
 
 Paperdesk is an initial preview. The documented shell limitations are deliberate consequences of using public window APIs.

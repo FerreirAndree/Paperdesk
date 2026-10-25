@@ -1,6 +1,7 @@
 #include "model.h"
 #include "storage.h"
 #include "render.h"
+#include "desktop.h"
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
@@ -162,6 +163,7 @@ struct App {
     HWINEVENTHOOK desktopHook = nullptr;
     bool traceDesktop = false;
     int traceCount = 0, desktopRetries = 0;
+    DWORD layerError = ERROR_SUCCESS;
     explicit App(const Options& options) : store(options.directory), testUI(options.testUI), traceDesktop(options.traceDesktop) {}
     ~App() {
         if (foregroundHook) UnhookWinEvent(foregroundHook);
@@ -240,13 +242,6 @@ bool IsDesktop(HWND hwnd) {
     GetClassNameW(hwnd, name, 80);
     return wcscmp(name, L"Progman") == 0 || wcscmp(name, L"WorkerW") == 0 || hwnd == GetShellWindow();
 }
-bool Above(HWND window, HWND other) {
-    for (HWND current = GetTopWindow(nullptr); current; current = GetWindow(current, GW_HWNDNEXT)) {
-        if (current == window) return true;
-        if (current == other) return false;
-    }
-    return false;
-}
 HWND FrontDesktop() {
     // Explorer can focus Progman while a separate WorkerW covers the desktop.
     for (HWND window = GetTopWindow(nullptr); window; window = GetWindow(window, GW_HWNDNEXT)) {
@@ -255,18 +250,22 @@ HWND FrontDesktop() {
     return GetShellWindow();
 }
 void App::Trace(const char* reason) {
-    if (!traceDesktop || traceCount++ >= 500) return;
+    if (!traceDesktop || traceCount++ >= 2000) return;
     HWND foreground = GetForegroundWindow();
     wchar_t name[80]{}, root[80]{}, top[80]{};
     GetClassNameW(foreground, name, 80);
     GetClassNameW(GetAncestor(foreground, GA_ROOT), root, 80);
     GetClassNameW(GetTopWindow(nullptr), top, 80);
     std::ofstream out(store.Directory() / L"desktop-trace.log", std::ios::app);
-    out << GetTickCount64() << ' ' << reason << " foreground=" << Utf8(name) << " root=" << Utf8(root) << " top=" << Utf8(top);
+    HWND desktop = FrontDesktop();
+    out << GetTickCount64() << ' ' << reason << " foreground=" << Utf8(name) << " root=" << Utf8(root) << " top=" << Utf8(top)
+        << " desktopTopmost=" << ((GetWindowLongPtrW(desktop, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) << " lastError=" << layerError;
     if (!notes.empty()) {
         HWND note = notes.front()->window;
         DWORD cloaked = 0; DwmGetWindowAttribute(note, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
-        out << " visible=" << IsWindowVisible(note) << " minimized=" << IsIconic(note) << " cloaked=" << cloaked << " aboveForeground=" << Above(note, GetAncestor(foreground, GA_ROOT)) << " aboveDesktop=" << Above(note, FrontDesktop());
+        out << " visible=" << IsWindowVisible(note) << " minimized=" << IsIconic(note) << " cloaked=" << cloaked
+            << " noteTopmost=" << ((GetWindowLongPtrW(note, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0)
+            << " aboveForeground=" << IsAbove(note, GetAncestor(foreground, GA_ROOT)) << " aboveDesktop=" << IsAbove(note, desktop);
     }
     out << '\n';
 }
@@ -284,18 +283,19 @@ void App::Layer() {
     foreground = GetAncestor(foreground, GA_ROOT);
     DWORD pid = 0; GetWindowThreadProcessId(foreground, &pid);
     HWND desktopFront = FrontDesktop();
-    // Show desktop may raise Explorer's desktop without changing foreground focus.
-    // In that case its Z-order, not the stale foreground HWND, is authoritative.
-    bool desktop = IsDesktop(foreground) || (desktopFront && Above(desktopFront, foreground));
+    // Only an actual desktop foreground may elevate notes. A stale desktop Z-order
+    // must never keep them topmost when the user returns to a real application.
+    bool desktop = IsDesktop(foreground);
     if (pid == GetCurrentProcessId() && !desktop) return;
+    layerError = ERROR_SUCCESS;
     for (auto& v : notes) {
         if (desktop) {
-            if (!IsWindowVisible(v->window)) ShowWindow(v->window, SW_SHOWNOACTIVATE);
-            if (!Above(v->window, desktopFront)) SetWindowPos(v->window, HWND_TOP, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-        } else if (Above(v->window, foreground)) {
-            SetWindowPos(v->window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+            if (!PlaceOnDesktop(v->window, desktopFront)) layerError = GetLastError();
+        } else {
+            if (!PlaceBehindApps(v->window, foreground)) layerError = GetLastError();
         }
     }
+    Trace("layer-applied");
 }
 void NoteView::Paint() {
     int hidden = app->editor && app->editor->view == this ? app->editor->index : -1;

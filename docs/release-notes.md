@@ -1,16 +1,13 @@
-Paperdesk 0.1.1 updates resizing, launcher behaviour, and desktop visibility.
+Paperdesk 0.1.2 fixes notes disappearing after Win+D on the reported Windows setup.
 
-- Drag the lower-right corner to scale a note like an image. Text, line breaks, and block positions stay in place. Ctrl+Alt-drag and right-click size actions are also available.
-- Notes remember their display scale across restarts. Existing files load at 100% size.
-- Ctrl+Alt+N has been removed. Paperdesk registers no global hotkeys. Use **New paper note** in your launcher or `Paperdesk.exe --new`.
-- Desktop visibility now responds to shell stacking-order changes and retries briefly while a Show desktop transition settles. Notes are excluded from Peek fading.
+Notes temporarily enter the topmost window band while Explorer's desktop has focus. Returning to an app removes that status and lowers the notes. The user confirmed that Win+D keeps notes visible with this build.
 
-Extract the ZIP and run `Paperdesk.exe`. For installation and startup restoration, run `./scripts/install.ps1` from the extracted folder in PowerShell. `./scripts/uninstall.ps1` removes the app while retaining notes.
+This release retains proportional resizing and launcher-only creation from 0.1.1. Drag the lower-right corner to scale the paper and its contents together. Use **New paper note** in your launcher or `Paperdesk.exe --new`. No global hotkeys are registered.
 
-This remains a preview. Notes use documented Windows window APIs to approximate desktop attachment. See the verification report for tested behaviour and remaining shell and hardware checks.
+Validation includes 202 core checks, 62 rendering/layout checks, and 52 native window-layer checks. The verification report records remaining hardware and shell coverage.
 
-The Win+D repair still needs manual confirmation on the reported Windows setup; it is not claimed as verified in this release.
+Extract the ZIP and run `Paperdesk.exe`. To install and restore notes at sign-in, run `./scripts/install.ps1` from the extracted folder in PowerShell. `./scripts/uninstall.ps1` retains saved notes.
 
-The note format is now version 2. Version 1 files are read automatically and upgraded on the next save. Keep a backup if you intend to downgrade to 0.1.0.
+This remains a preview using documented Windows APIs to approximate desktop attachment. The note format remains version 2, compatible with 0.1.1. Version 1 files upgrade automatically when saved; keep a backup before downgrading to 0.1.0.
 
-The release executable is unsigned. A SHA-256 checksum is included alongside the ZIP.
+The executable is unsigned. A SHA-256 checksum accompanies the ZIP.

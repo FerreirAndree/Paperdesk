@@ -10,7 +10,7 @@ The controller receives display changes, session shutdown, foreground WinEvents,
 
 Windows does not publish an API for third-party wallpaper widgets. Reparenting into Explorer's `WorkerW` and the common `0x052C` shell-message technique rely on undocumented behaviour and are deliberately absent here.
 
-Paperdesk uses `SetWindowPos` to lower notes when a different app gains focus. If the desktop shell gains focus or is raised above the foreground window by Show desktop, notes are shown without activation and raised. Foreground focus can remain unchanged during that transition, so the frontmost visible Explorer desktop window is checked separately. Notes never use the topmost window band.
+Paperdesk uses `SetWindowPos` to lower notes when a different app gains focus. When Explorer's desktop gains focus, notes temporarily enter the topmost window band without activation. Selecting another application removes that status and lowers the notes. A stale desktop Z-order cannot trigger elevation while an application has focus. Editing a note preserves its current layer until focus leaves Paperdesk.
 
 This is an approximation of desktop attachment. When the desktop is foreground, a note can overlap a visible, unfocused application window. Selecting that application lowers the notes again. Task View, virtual desktops, Explorer replacements, and Show desktop behaviour can vary across Windows versions. They need manual verification on the target Windows build. Notes are not guaranteed to be visible in every shell transition.
 
@@ -30,7 +30,7 @@ A temporary native EDIT control handles typing, selection, paste, undo, and inpu
 
 The current file format starts with `PAPERDESK 2`, followed by a note count. Each note stores a quoted ID, physical x/y, logical width/height, numeric style, display zoom, and block count. Each block stores x/y, font size, and quoted UTF-8 text. Quoted strings can contain newlines. Version 1 files load at 100% zoom and are upgraded on the next save. Do not edit the file while Paperdesk is running. Version 0.1.0 cannot read the newer format; retain a backup before downgrading.
 
-For shell diagnostics, `--trace-desktop` enables a bounded log of foreground classes, note visibility, minimisation, DWM cloaking, and relative Z-order. It does not log note text or other window titles. Logging stops after 500 samples and is disabled on the next ordinary launch.
+For shell diagnostics, `--trace-desktop` enables a bounded log of foreground classes, note visibility, minimisation, DWM cloaking, topmost status, window-operation errors, and relative Z-order before and after placement. It does not log note text or other window titles. Logging stops after 2000 samples and is disabled on the next ordinary launch.
 
 ## API references
 

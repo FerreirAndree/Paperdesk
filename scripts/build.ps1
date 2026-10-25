@@ -21,7 +21,7 @@ $env:VSLANG = '1033'
 try {
     & rc /nologo /I "$root/src" /fo app.res "$root/src/app.rc"
     if ($LASTEXITCODE -ne 0) { throw 'Resource build failed.' }
-    & cl @common "$root/src/model.cpp" "$root/src/storage.cpp" "$root/src/render.cpp" "$root/src/main.cpp" '/Fe:Paperdesk.exe' /link app.res /SUBSYSTEM:WINDOWS /MANIFEST:EMBED "/MANIFESTINPUT:$root/src/app.manifest" gdiplus.lib comctl32.lib user32.lib gdi32.lib shell32.lib ole32.lib advapi32.lib dwmapi.lib
+    & cl @common "$root/src/model.cpp" "$root/src/storage.cpp" "$root/src/desktop.cpp" "$root/src/render.cpp" "$root/src/main.cpp" '/Fe:Paperdesk.exe' /link app.res /SUBSYSTEM:WINDOWS /MANIFEST:EMBED "/MANIFESTINPUT:$root/src/app.manifest" gdiplus.lib comctl32.lib user32.lib gdi32.lib shell32.lib ole32.lib advapi32.lib dwmapi.lib
     if ($LASTEXITCODE -ne 0) { throw 'Paperdesk build failed.' }
     if ($Test) {
         & cl @common "$root/src/model.cpp" "$root/src/storage.cpp" "$root/tests/core_tests.cpp" '/Fe:paperdesk_tests.exe' /link shell32.lib ole32.lib user32.lib
@@ -32,6 +32,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Rendering test build failed.' }
         & './paperdesk_render_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Rendering tests failed.' }
+        & cl @common "$root/src/desktop.cpp" "$root/tests/desktop_tests.cpp" '/Fe:paperdesk_desktop_tests.exe' /link user32.lib
+        if ($LASTEXITCODE -ne 0) { throw 'Desktop test build failed.' }
+        & './paperdesk_desktop_tests.exe'
+        if ($LASTEXITCODE -ne 0) { throw 'Desktop tests failed.' }
     }
 } finally { Pop-Location }
 Write-Host "Built $build/Paperdesk.exe"
