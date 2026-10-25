@@ -1,5 +1,15 @@
 # Verification, 25 October 2026
 
+## Version 0.1.1 follow-up
+
+The updated build passed 202 core checks and 62 rendering/layout checks. New coverage includes reading version 1 notes at 100% scale, persisting the new zoom field, rejecting invalid scales, resize limits, and counting the actual rendered text lines at 35%, 50%, 72%, 100%, 150%, and 200% zoom. The small-size image test closes gaps within letters so detached dots are not mistaken for additional lines.
+
+A live lower-right corner drag shrank a note to 71.93% while preserving its three text lines, paper dimensions, font size, and block coordinates in the saved file. The updated executable has no global hotkey registration or hotkey handler. Launcher creation remains available.
+
+The desktop repair now handles shell show/hide/reorder events, root-window classification, the frontmost Explorer desktop window, bounded settling retries, and Peek exclusion. A manual Win+D confirmation is still pending. These changes are not yet evidence of a successful Show desktop test on this machine.
+
+The measurements and initial interaction checks below describe version 0.1.0.
+
 Test machine: Windows x64, build 26300.9711, 26H2. Built with MSVC 14.44 and Windows SDK 10.0.26100. The GUI checks used the developer `--test-ui` flag because the automation tool excludes ordinary tool windows from its inventory.
 
 ## Automated checks

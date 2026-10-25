@@ -10,6 +10,7 @@ constexpr size_t MaxBlocks = 32;
 constexpr size_t MaxText = 4096;
 constexpr float MinWidth = 220, MinHeight = 200, MaxSize = 900;
 constexpr float Margin = 28, Shadow = 16;
+constexpr float MinZoom = .35f, MaxZoom = 2.f;
 enum class Style : int { Butter, Rose, Parchment };
 struct Block {
     float x = 32, y = 46, size = 22;
@@ -20,6 +21,7 @@ struct Note {
     int x = 120, y = 120; // Physical desktop coordinates, including negative monitors.
     float width = 310, height = 310; // Paper dimensions in device independent pixels.
     Style style = Style::Butter;
+    float zoom = 1; // Display scale only. The paper layout never reflows when resized.
     std::vector<Block> blocks;
 };
 struct State { std::vector<Note> notes; };
@@ -32,4 +34,5 @@ State Decode(std::string_view bytes);
 void Validate(const State& state);
 const wchar_t* StyleName(Style style);
 Style ParseStyle(std::wstring_view text);
+float ZoomAfterDrag(const Note& original, float dx, float dy);
 }

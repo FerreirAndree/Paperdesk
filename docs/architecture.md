@@ -4,7 +4,7 @@
 
 One event-driven process owns a hidden controller window and one layered `WS_POPUP` window per note. Idle note windows have `WS_EX_TOOLWINDOW` and `WS_EX_NOACTIVATE`. A per-profile, per-session named mutex prevents competing writers. Subsequent launches use bounded `WM_COPYDATA` messages to request a note or a clean shutdown.
 
-The controller receives display changes, session shutdown, a global hotkey, and a foreground WinEvent hook. Foreground notifications are delivered out of process; there is no injected hook DLL. A single delayed event after a foreground change accommodates shell transitions. There is no recurring desktop polling timer.
+The controller receives display changes, session shutdown, foreground WinEvents, and shell show/hide/reorder events. Notifications are delivered out of process; there is no injected hook DLL and no global hotkey registration. Foreground windows are resolved to their root before desktop classification. Eight delayed checks over roughly one second accommodate shell transitions. The timer then stops; there is no idle polling loop. Z-order is changed only when a note is on the wrong side of the target window.
 
 ## Desktop integration and limits
 
@@ -20,7 +20,7 @@ Startup registration uses the current user's documented Run key. Windows control
 
 GDI+ draws paper and text into premultiplied-alpha bitmaps for `UpdateLayeredWindow`. Fibres are deterministic and generated in code. Redraws happen only on content, geometry, DPI, or feedback changes. Each note uses logical dimensions and physical desktop coordinates, allowing negative monitor positions. Missing monitors are handled by clamping notes into the nearest work area.
 
-Text uses Segoe Print on sticky paper and Georgia on parchment. Windows supplies both fonts; font files are not redistributed. The renderer measures text before edits, resizes, and style changes are accepted.
+Text uses Segoe Print on sticky paper and Georgia on parchment. Windows supplies both fonts; font files are not redistributed. The renderer measures text before edits and style changes are accepted. Resizing changes a separate persisted zoom factor. Layout dimensions, text positions, font sizes, and wrapping widths remain unchanged; drawing and input coordinates use the product of display DPI and note zoom. The lower-right corner and Ctrl+Alt-drag both scale the note proportionally around its top-left window position.
 
 A temporary native EDIT control handles typing, selection, paste, undo, and input methods. It grows within the available paper area. Both the native editor's metrics and the paper renderer's metrics must fit. Overflow restores the last accepted text; the control is reset to its first line. Saving removes the control and redraws the block as ink. Input is normalised to Windows newlines while editing.
 
@@ -28,7 +28,9 @@ A temporary native EDIT control handles typing, selection, paste, undo, and inpu
 
 `model.cpp` owns the versioned UTF-8 format, limits and validation. `storage.cpp` writes to a same-directory temporary file, calls `FlushFileBuffers`, and commits with `ReplaceFileW`, retaining a backup. The first save uses `MoveFileExW` with write-through. A backup is read before a damaged original is renamed. An unreadable primary and backup stop loading instead of replacing user data with an empty state.
 
-The file format starts with `PAPERDESK 1`, followed by a note count. Each note stores a quoted ID, physical x/y, logical width/height, numeric style, and block count. Each block stores x/y, font size, and quoted UTF-8 text. Quoted strings can contain newlines. The format is intentionally small and versioned. Do not edit it while Paperdesk is running.
+The current file format starts with `PAPERDESK 2`, followed by a note count. Each note stores a quoted ID, physical x/y, logical width/height, numeric style, display zoom, and block count. Each block stores x/y, font size, and quoted UTF-8 text. Quoted strings can contain newlines. Version 1 files load at 100% zoom and are upgraded on the next save. Do not edit the file while Paperdesk is running. Version 0.1.0 cannot read the newer format; retain a backup before downgrading.
+
+For shell diagnostics, `--trace-desktop` enables a bounded log of foreground classes, note visibility, minimisation, DWM cloaking, and relative Z-order. It does not log note text or other window titles. Logging stops after 500 samples and is disabled on the next ordinary launch.
 
 ## API references
 

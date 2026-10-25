@@ -26,13 +26,13 @@ This installs to `%LOCALAPPDATA%\Programs\Paperdesk`, adds Start menu shortcuts,
 | Cancel an edit | Escape |
 | Move a note | Alt + drag |
 | Move a text block | Alt + Shift + drag the text |
-| Resize a note | Ctrl + Alt + drag |
+| Scale the entire note | Drag its lower-right corner, or Ctrl + Alt + drag |
 | Change paper, text size, duplicate or delete | Right-click the note |
-| New note from any app | Ctrl+Alt+N |
+| Create a note | Launch **New paper note** or run `Paperdesk.exe --new` |
 
-There are three paper styles: butter, rose, and parchment. Text blocks can sit anywhere inside the paper margins and may overlap. Each block wraps toward the right edge. Text that would exceed the paper is rejected, leaving the previous text intact. Shrinking a note or changing its font is also blocked if it would clip existing text. There are no scrollbars.
+There are three paper styles: butter, rose, and parchment. Text blocks can sit anywhere inside the paper margins and may overlap. Each block wraps toward the right edge. Text that would exceed the paper is rejected, leaving the previous text intact. Resizing scales the whole note between 35% and 200%, including its text, margins, and spacing. It preserves the aspect ratio, block positions, and line breaks. The right-click menu also offers smaller, larger, and original-size actions. Changing a text block's font size is blocked if it would clip the text. There are no scrollbars.
 
-Right-click any remaining note to undo a deleted note during the current session. The previous autosave is also kept on disk. When the last note is gone, the app stays available through its shortcut, command, and hotkey.
+Right-click any remaining note to undo a deleted note during the current session. The previous autosave is also kept on disk. When the last note is gone, the app stays available through its launcher shortcut and command. Paperdesk does not register any global keyboard shortcuts.
 
 ## Launchers and commands
 
@@ -52,16 +52,15 @@ After installation, search for **New paper note** in Start or a launcher that in
 | `--quit` | Save and close the running app |
 | `--startup enable` / `--startup disable` | Register or remove sign-in startup |
 | `--help` | Show the gesture reference |
-| `--no-hotkey` | Start without registering Ctrl+Alt+N |
 | `--data-dir "path"` | Use a separate notes directory and instance |
 
-A second launch sends its command to the existing process. It does not open another copy of your notes. If Ctrl+Alt+N is occupied, Paperdesk explains the conflict and the launcher commands remain available.
+A second launch sends its command to the existing process. It does not open another copy of your notes. The old `--no-hotkey` flag remains accepted for compatibility, but is no longer necessary.
 
 ## Desktop behaviour
 
 Notes are borderless, transparent native windows. They are lowered when another application takes focus and brought back when the Windows desktop takes focus. They do not appear in Alt+Tab or the taskbar. Editing temporarily opens a native text field, then returns to the paper rendering.
 
-This uses documented window and foreground-event APIs. It does not modify your wallpaper, inject into Explorer, reparent windows into `WorkerW`, or send undocumented shell messages. Windows has no public desktop-widget layer, so these are still windows. See [desktop integration and known limits](docs/architecture.md) before treating this as a wallpaper extension.
+This uses documented window and WinEvent APIs, including desktop stacking-order notifications and bounded retries while the shell transition settles. Notes are excluded from Desktop Peek fading. It does not modify your wallpaper, inject into Explorer, reparent windows into `WorkerW`, or send undocumented shell messages. These are still windows. See [desktop integration and known limits](docs/architecture.md) before treating this as a wallpaper extension.
 
 ## Your notes
 

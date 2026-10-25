@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Executable = '', [string]$Version = '0.1.0')
+param([string]$Executable = '', [string]$Version = '0.1.1')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 if (-not $Executable) { $Executable = Join-Path $root 'build/Paperdesk.exe' }

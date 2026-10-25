@@ -10,6 +10,7 @@
 #include <cmath>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -24,7 +25,7 @@ constexpr UINT DesktopEvent = WM_APP + 1, FinishEditor = WM_APP + 2, ExecuteComm
 constexpr ULONG_PTR IpcMagic = 0x50415052;
 struct Options {
     std::filesystem::path directory = DefaultDirectory();
-    bool create = false, quit = false, help = false, noHotkey = false, testUI = false;
+    bool create = false, quit = false, help = false, testUI = false, traceDesktop = false;
     Style style = Style::Butter;
     std::wstring text, preview, startup;
 };
@@ -46,7 +47,8 @@ Options Parse(const wchar_t* command) {
             else if (a == L"--data-dir") o.directory = value();
             else if (a == L"--quit") o.quit = true;
             else if (a == L"--restore") {}
-            else if (a == L"--no-hotkey") o.noHotkey = true;
+            else if (a == L"--no-hotkey") {} // Backwards-compatible no-op. No global shortcuts exist.
+            else if (a == L"--trace-desktop") o.traceDesktop = true;
             else if (a == L"--test-ui") o.testUI = true;
             else if (a == L"--help" || a == L"-h") o.help = true;
             else if (a == L"--render-preview") o.preview = value();
@@ -67,11 +69,12 @@ void Help(HWND owner) {
         L"Double-click text        Edit that block\n"
         L"Alt + drag                     Move the paper\n"
         L"Alt + Shift + drag       Move a text block\n"
-        L"Ctrl + Alt + drag         Resize the paper\n"
+        L"Drag lower-right corner    Scale the entire note\n"
+        L"Ctrl + Alt + drag              Also scales the note\n"
         L"Right-click                   Paper, text size, delete, help\n\n"
         L"While writing: Ctrl+Enter saves; Escape cancels.\n"
         L"Click away to finish. Text never scrolls off the paper.\n\n"
-        L"Ctrl+Alt+N creates a new note from any app.\n"
+        L"Launch 'New paper note' from Start or your launcher.\n"
         L"Launcher command: Paperdesk.exe --new\n"
         L"Optional: --style butter|rose|parchment --text \"Remember this\"\n\n"
         L"Deleted a note? Right-click another and choose Undo delete.\n"
@@ -107,7 +110,8 @@ struct NoteView {
     App* app;
     Note note;
     HWND window = nullptr;
-    float scale = 1;
+    float dpiScale = 1;
+    float Scale() const { return dpiScale * note.zoom; }
     enum class Drag { None, Paper, Block, Resize } drag = Drag::None;
     POINT dragStart{};
     Note beforeDrag;
@@ -118,6 +122,9 @@ struct NoteView {
     void Paint();
     void Place(bool clamp = true);
     int Hit(float x, float y) const;
+    bool Corner(float x, float y) const {
+        return x >= note.width - std::max(24.f, 20.f / Scale()) && y >= note.height - std::max(30.f, 24.f / Scale());
+    }
     void Edit(float x, float y, int block = -1);
     void Menu(POINT screen);
     static LRESULT CALLBACK Proc(HWND, UINT, WPARAM, LPARAM);
@@ -152,8 +159,14 @@ struct App {
     std::deque<Options> commands;
     bool dirty = false, saveErrorShown = false, shuttingDown = false, testUI = false;
     HWINEVENTHOOK foregroundHook = nullptr;
-    explicit App(const Options& options) : store(options.directory), testUI(options.testUI) {}
-    ~App() { if (foregroundHook) UnhookWinEvent(foregroundHook); }
+    HWINEVENTHOOK desktopHook = nullptr;
+    bool traceDesktop = false;
+    int traceCount = 0, desktopRetries = 0;
+    explicit App(const Options& options) : store(options.directory), testUI(options.testUI), traceDesktop(options.traceDesktop) {}
+    ~App() {
+        if (foregroundHook) UnhookWinEvent(foregroundHook);
+        if (desktopHook) UnhookWinEvent(desktopHook);
+    }
     State Snapshot() const {
         State state;
         for (const auto& view : notes) state.notes.push_back(view->note);
@@ -210,7 +223,9 @@ struct App {
         Add(deleted.back()); deleted.pop_back(); Dirty(); Save();
     }
     void Layer();
+    void Trace(const char* reason);
     void RunCommand(const Options& o) {
+        if (o.traceDesktop) { traceDesktop = true; traceCount = 0; Trace("trace-enabled"); }
         if (o.quit) { PostMessageW(control, WM_CLOSE, 0, 0); return; }
         if (o.create) New(o.style, o.text);
         else Layer();
@@ -220,32 +235,75 @@ struct App {
 App* running = nullptr;
 bool IsDesktop(HWND hwnd) {
     if (!hwnd) return false;
+    hwnd = GetAncestor(hwnd, GA_ROOT);
     wchar_t name[80]{};
     GetClassNameW(hwnd, name, 80);
     return wcscmp(name, L"Progman") == 0 || wcscmp(name, L"WorkerW") == 0 || hwnd == GetShellWindow();
 }
+bool Above(HWND window, HWND other) {
+    for (HWND current = GetTopWindow(nullptr); current; current = GetWindow(current, GW_HWNDNEXT)) {
+        if (current == window) return true;
+        if (current == other) return false;
+    }
+    return false;
+}
+HWND FrontDesktop() {
+    // Explorer can focus Progman while a separate WorkerW covers the desktop.
+    for (HWND window = GetTopWindow(nullptr); window; window = GetWindow(window, GW_HWNDNEXT)) {
+        if (IsWindowVisible(window) && IsDesktop(window)) return window;
+    }
+    return GetShellWindow();
+}
+void App::Trace(const char* reason) {
+    if (!traceDesktop || traceCount++ >= 500) return;
+    HWND foreground = GetForegroundWindow();
+    wchar_t name[80]{}, root[80]{}, top[80]{};
+    GetClassNameW(foreground, name, 80);
+    GetClassNameW(GetAncestor(foreground, GA_ROOT), root, 80);
+    GetClassNameW(GetTopWindow(nullptr), top, 80);
+    std::ofstream out(store.Directory() / L"desktop-trace.log", std::ios::app);
+    out << GetTickCount64() << ' ' << reason << " foreground=" << Utf8(name) << " root=" << Utf8(root) << " top=" << Utf8(top);
+    if (!notes.empty()) {
+        HWND note = notes.front()->window;
+        DWORD cloaked = 0; DwmGetWindowAttribute(note, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+        out << " visible=" << IsWindowVisible(note) << " minimized=" << IsIconic(note) << " cloaked=" << cloaked << " aboveForeground=" << Above(note, GetAncestor(foreground, GA_ROOT)) << " aboveDesktop=" << Above(note, FrontDesktop());
+    }
+    out << '\n';
+}
 void CALLBACK Foreground(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD) {
     if (running) PostMessageW(running->control, DesktopEvent, 0, 0);
 }
+void CALLBACK DesktopChanged(HWINEVENTHOOK, DWORD, HWND hwnd, LONG object, LONG child, DWORD, DWORD) {
+    if (!running || child != CHILDID_SELF || (object != OBJID_WINDOW && object != OBJID_CLIENT)) return;
+    if (!hwnd || hwnd == GetDesktopWindow() || IsDesktop(hwnd)) PostMessageW(running->control, DesktopEvent, 0, 0);
+}
 void App::Layer() {
     HWND foreground = GetForegroundWindow();
+    Trace("layer");
+    if (!foreground) return; // Transient shell focus gap; the bounded retries handle it.
+    foreground = GetAncestor(foreground, GA_ROOT);
     DWORD pid = 0; GetWindowThreadProcessId(foreground, &pid);
     if (pid == GetCurrentProcessId()) return;
     bool desktop = IsDesktop(foreground);
+    HWND desktopFront = desktop ? FrontDesktop() : nullptr;
     for (auto& v : notes) {
-        if (desktop) ShowWindow(v->window, SW_SHOWNOACTIVATE);
-        SetWindowPos(v->window, desktop ? HWND_TOP : HWND_BOTTOM, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+        if (desktop) {
+            if (!IsWindowVisible(v->window)) ShowWindow(v->window, SW_SHOWNOACTIVATE);
+            if (!Above(v->window, desktopFront)) SetWindowPos(v->window, HWND_TOP, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        } else if (Above(v->window, foreground)) {
+            SetWindowPos(v->window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+        }
     }
 }
 void NoteView::Paint() {
     int hidden = app->editor && app->editor->view == this ? app->editor->index : -1;
-    if (!Present(window, note, scale, hidden, full)) {
+    if (!Present(window, note, Scale(), hidden, full)) {
         OutputDebugStringW(L"Paperdesk: failed to present a note.\n");
     }
 }
 void NoteView::Place(bool clamp) {
     if (clamp) {
-        RECT bounds{note.x, note.y, note.x + static_cast<LONG>((note.width + Shadow * 2) * scale), note.y + static_cast<LONG>((note.height + Shadow * 2) * scale)};
+        RECT bounds{note.x, note.y, note.x + static_cast<LONG>((note.width + Shadow * 2) * Scale()), note.y + static_cast<LONG>((note.height + Shadow * 2) * Scale())};
         MONITORINFO monitor{sizeof(MONITORINFO)};
         if (GetMonitorInfoW(MonitorFromRect(&bounds, MONITOR_DEFAULTTONEAREST), &monitor)) {
             int w = bounds.right - bounds.left, h = bounds.bottom - bounds.top;
@@ -253,7 +311,7 @@ void NoteView::Place(bool clamp) {
             note.y = std::clamp(note.y, static_cast<int>(monitor.rcWork.top), std::max(static_cast<int>(monitor.rcWork.top), static_cast<int>(monitor.rcWork.bottom) - h));
         }
     }
-    SetWindowPos(window, nullptr, note.x, note.y, static_cast<int>(std::ceil((note.width + Shadow * 2) * scale)), static_cast<int>(std::ceil((note.height + Shadow * 2) * scale)), SWP_NOACTIVATE | SWP_NOZORDER);
+    SetWindowPos(window, nullptr, note.x, note.y, static_cast<int>(std::ceil((note.width + Shadow * 2) * Scale())), static_cast<int>(std::ceil((note.height + Shadow * 2) * Scale())), SWP_NOACTIVATE | SWP_NOZORDER);
     Paint();
 }
 void NoteView::Open() {
@@ -261,7 +319,9 @@ void NoteView::Open() {
     DWORD exStyle = WS_EX_LAYERED | (app->testUI ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
     window = CreateWindowExW(exStyle, NoteClass, title.c_str(), WS_POPUP, note.x, note.y, 1, 1, nullptr, nullptr, app->instance, this);
     if (!window) throw std::runtime_error("Could not create a paper window");
-    scale = GetDpiForWindow(window) / 96.f;
+    BOOL excluded = TRUE;
+    DwmSetWindowAttribute(window, DWMWA_EXCLUDED_FROM_PEEK, &excluded, sizeof(excluded));
+    dpiScale = GetDpiForWindow(window) / 96.f;
     Place();
     ShowWindow(window, SW_SHOWNOACTIVATE);
     SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
@@ -294,7 +354,7 @@ void NoteView::Edit(float x, float y, int block) {
 void NoteView::Menu(POINT screen) {
     app->EndEdit();
     POINT local = screen; ScreenToClient(window, &local);
-    float x = local.x / scale - Shadow, y = local.y / scale - Shadow;
+    float x = local.x / Scale() - Shadow, y = local.y / Scale() - Shadow;
     int block = Hit(x, y);
     HMENU menu = CreatePopupMenu(), styles = CreatePopupMenu(), sizes = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, 1, block >= 0 ? L"Edit text\tDouble-click" : L"Write here\tDouble-click");
@@ -305,7 +365,10 @@ void NoteView::Menu(POINT screen) {
     AppendMenuW(menu, MF_POPUP | (block < 0 ? MF_GRAYED : 0), reinterpret_cast<UINT_PTR>(sizes), L"Text size");
     if (block >= 0) AppendMenuW(menu, MF_STRING, 23, L"Remove this text");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, 30, L"New note\tCtrl+Alt+N");
+    AppendMenuW(menu, MF_STRING, 24, L"Smaller note");
+    AppendMenuW(menu, MF_STRING, 25, L"Larger note");
+    AppendMenuW(menu, MF_STRING, 26, L"Original size");
+    AppendMenuW(menu, MF_STRING, 30, L"New note");
     AppendMenuW(menu, MF_STRING, 31, L"Duplicate note");
     AppendMenuW(menu, MF_STRING, 32, L"Delete note");
     AppendMenuW(menu, MF_STRING | (app->deleted.empty() ? MF_GRAYED : 0), 33, L"Undo delete");
@@ -329,7 +392,10 @@ void NoteView::Menu(POINT screen) {
         if (!AllFit(note)) { note.blocks[block].size = old; full = true; SetTimer(window, FullTimer, 2200, nullptr); }
         app->Dirty(); Paint();
     } else if (choice == 23 && block >= 0) { note.blocks.erase(note.blocks.begin() + block); app->Dirty(); Paint(); }
-    else if (choice == 30) app->New(note.style, L"");
+    else if (choice >= 24 && choice <= 26) {
+        note.zoom = choice == 26 ? 1.f : std::clamp(note.zoom * (choice == 24 ? .85f : 1.f / .85f), MinZoom, MaxZoom);
+        Place(); app->Dirty();
+    } else if (choice == 30) app->New(note.style, L"");
     else if (choice == 31 && app->notes.size() < MaxNotes) {
         Note copy = note; copy.id = NewId(); copy.x += 36; copy.y += 36;
         app->Add(copy); app->Dirty();
@@ -351,18 +417,20 @@ LRESULT CALLBACK NoteView::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
     case WM_NCHITTEST: {
         POINT p{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}; ScreenToClient(hwnd, &p);
-        float x = p.x / v->scale - Shadow, y = p.y / v->scale - Shadow;
+        float x = p.x / v->Scale() - Shadow, y = p.y / v->Scale() - Shadow;
         if (x < 0 || y < 0 || x > v->note.width || y > v->note.height - 7) return HTTRANSPARENT;
         return HTCLIENT;
     }
     case WM_LBUTTONDBLCLK:
-        v->Edit(GET_X_LPARAM(lp) / v->scale - Shadow, GET_Y_LPARAM(lp) / v->scale - Shadow); return 0;
+        v->Edit(GET_X_LPARAM(lp) / v->Scale() - Shadow, GET_Y_LPARAM(lp) / v->Scale() - Shadow); return 0;
     case WM_LBUTTONDOWN: {
-        if (!(GetKeyState(VK_MENU) & 0x8000)) return 0;
+        float x = GET_X_LPARAM(lp) / v->Scale() - Shadow, y = GET_Y_LPARAM(lp) / v->Scale() - Shadow;
+        bool corner = v->Corner(x, y);
+        if (!corner && !(GetKeyState(VK_MENU) & 0x8000)) return 0;
         v->app->EndEdit();
         v->beforeDrag = v->note; GetCursorPos(&v->dragStart);
-        v->dragBlock = v->Hit(GET_X_LPARAM(lp) / v->scale - Shadow, GET_Y_LPARAM(lp) / v->scale - Shadow);
-        if (GetKeyState(VK_CONTROL) & 0x8000) v->drag = Drag::Resize;
+        v->dragBlock = v->Hit(GET_X_LPARAM(lp) / v->Scale() - Shadow, GET_Y_LPARAM(lp) / v->Scale() - Shadow);
+        if (corner || (GetKeyState(VK_CONTROL) & 0x8000)) v->drag = Drag::Resize;
         else if ((GetKeyState(VK_SHIFT) & 0x8000) && v->dragBlock >= 0) v->drag = Drag::Block;
         else v->drag = Drag::Paper;
         SetCapture(hwnd); return 0;
@@ -370,7 +438,7 @@ LRESULT CALLBACK NoteView::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         if (v->drag == Drag::None) return 0;
         POINT p{}; GetCursorPos(&p);
-        float dx = (p.x - v->dragStart.x) / v->scale, dy = (p.y - v->dragStart.y) / v->scale;
+        float dx = (p.x - v->dragStart.x) / v->Scale(), dy = (p.y - v->dragStart.y) / v->Scale();
         if (v->drag == Drag::Paper) {
             v->note.x = v->beforeDrag.x + p.x - v->dragStart.x;
             v->note.y = v->beforeDrag.y + p.y - v->dragStart.y;
@@ -378,15 +446,14 @@ LRESULT CALLBACK NoteView::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         } else {
             auto candidate = v->note;
             if (v->drag == Drag::Resize) {
-                candidate.width = std::clamp(v->beforeDrag.width + dx, MinWidth, MaxSize);
-                candidate.height = std::clamp(v->beforeDrag.height + dy, MinHeight, MaxSize);
+                candidate.zoom = ZoomAfterDrag(v->beforeDrag, (p.x - v->dragStart.x) / v->dpiScale, (p.y - v->dragStart.y) / v->dpiScale);
             } else {
                 auto& b = candidate.blocks[v->dragBlock];
                 const auto& old = v->beforeDrag.blocks[v->dragBlock];
                 b.x = std::clamp(old.x + dx, Margin, candidate.width - Margin - 16);
                 b.y = std::clamp(old.y + dy, Margin, candidate.height - Margin - 16);
             }
-            if (AllFit(candidate)) { v->note = std::move(candidate); v->Place(false); }
+            if (v->drag == Drag::Resize || AllFit(candidate)) { v->note = std::move(candidate); v->Place(false); }
         }
         return 0;
     }
@@ -403,22 +470,25 @@ LRESULT CALLBACK NoteView::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_DPICHANGED:
         v->app->EndEdit();
-        v->scale = HIWORD(wp) / 96.f;
+        v->dpiScale = HIWORD(wp) / 96.f;
         v->note.x = reinterpret_cast<RECT*>(lp)->left; v->note.y = reinterpret_cast<RECT*>(lp)->top;
         v->Place();
         if (v->drag != Drag::None) { v->beforeDrag = v->note; GetCursorPos(&v->dragStart); }
         v->app->Dirty(); return 0;
     case WM_TIMER:
         if (wp == FullTimer) { KillTimer(hwnd, FullTimer); v->full = false; v->Paint(); } return 0;
-    case WM_SETCURSOR:
-        SetCursor(LoadCursorW(nullptr, (GetKeyState(VK_MENU) & 0x8000) ? ((GetKeyState(VK_CONTROL) & 0x8000) ? IDC_SIZENWSE : IDC_SIZEALL) : IDC_ARROW)); return TRUE;
+    case WM_SETCURSOR: {
+        POINT p{}; GetCursorPos(&p); ScreenToClient(hwnd, &p);
+        bool corner = v->Corner(p.x / v->Scale() - Shadow, p.y / v->Scale() - Shadow);
+        SetCursor(LoadCursorW(nullptr, corner ? IDC_SIZENWSE : (GetKeyState(VK_MENU) & 0x8000) ? ((GetKeyState(VK_CONTROL) & 0x8000) ? IDC_SIZENWSE : IDC_SIZEALL) : IDC_ARROW)); return TRUE;
+    }
     case WM_CLOSE: return 0; // Closing the process is a deliberate menu/CLI action.
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 void Editor::Open() {
     brush = CreateSolidBrush(PaperColor(view->note.style));
-    font = CreateFontW(-static_cast<int>(original.size * view->scale), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH, FontName(view->note.style));
+    font = CreateFontW(-static_cast<int>(original.size * view->Scale()), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH, FontName(view->note.style));
     window = CreateWindowExW(app->testUI ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW, EditorClass, L"Paperdesk / Writing", WS_POPUP, 0, 0, 1, 1, view->window, nullptr, app->instance, this);
     if (!window) throw std::runtime_error("Could not open the text editor");
     input = CreateWindowExW(0, L"EDIT", accepted.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL, 0, 0, 1, 1, window, reinterpret_cast<HMENU>(101), app->instance, nullptr);
@@ -436,10 +506,10 @@ void Editor::Open() {
 void Editor::Position() {
     if (!input) return;
     const auto& b = view->note.blocks[index];
-    int width = static_cast<int>((view->note.width - Margin - b.x) * view->scale);
-    int maxHeight = static_cast<int>((view->note.height - Margin - b.y) * view->scale);
-    int x = view->note.x + static_cast<int>((Shadow + b.x) * view->scale);
-    int y = view->note.y + static_cast<int>((Shadow + b.y) * view->scale);
+    int width = static_cast<int>((view->note.width - Margin - b.x) * view->Scale());
+    int maxHeight = static_cast<int>((view->note.height - Margin - b.y) * view->Scale());
+    int x = view->note.x + static_cast<int>((Shadow + b.x) * view->Scale());
+    int y = view->note.y + static_cast<int>((Shadow + b.y) * view->Scale());
     // Give EDIT its final width before reading its own wrapping metrics.
     SetWindowPos(window, HWND_TOP, x, y, width, maxHeight, SWP_NOACTIVATE | SWP_NOREDRAW);
     MoveWindow(input, 0, 0, width, maxHeight, FALSE);
@@ -468,7 +538,7 @@ void Editor::Change() {
     TEXTMETRICW metrics{}; GetTextMetricsW(dc, &metrics);
     int nativeHeight = static_cast<int>(SendMessageW(input, EM_GETLINECOUNT, 0, 0)) * metrics.tmHeight;
     SelectObject(dc, old); ReleaseDC(input, dc);
-    int maxHeight = static_cast<int>((view->note.height - Margin - candidate.y) * view->scale);
+    int maxHeight = static_cast<int>((view->note.height - Margin - candidate.y) * view->Scale());
     if (!Fits(view->note, candidate) || nativeHeight > maxHeight || text.size() > MaxText) {
         DWORD start = 0, end = 0; SendMessageW(input, EM_GETSEL, reinterpret_cast<WPARAM>(&start), reinterpret_cast<LPARAM>(&end));
         changing = true;
@@ -545,14 +615,14 @@ LRESULT CALLBACK App::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         switch (msg) {
         case WM_TIMER:
             if (wp == SaveTimer) a->Save();
-            if (wp == DesktopTimer) { KillTimer(hwnd, DesktopTimer); a->Layer(); }
+            if (wp == DesktopTimer) { if (--a->desktopRetries <= 0) KillTimer(hwnd, DesktopTimer); a->Layer(); }
             return 0;
         case DesktopEvent:
-            a->Layer(); SetTimer(hwnd, DesktopTimer, 120, nullptr); return 0;
+            a->Layer();
+            a->desktopRetries = 8; SetTimer(hwnd, DesktopTimer, 120, nullptr); return 0;
         case FinishEditor:
             if (a->editor && a->editor->window == reinterpret_cast<HWND>(lp)) a->EndEdit(wp != 0);
             return 0;
-        case WM_HOTKEY: a->New(Style::Butter, L""); return 0;
         case WM_DISPLAYCHANGE:
             a->EndEdit(); for (auto& v : a->notes) v->Place(); a->Dirty(); return 0;
         case WM_COPYDATA: {
@@ -577,7 +647,7 @@ LRESULT CALLBACK App::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (!a->Save()) return 0;
             a->shuttingDown = true;
             for (auto& v : a->notes) DestroyWindow(v->window);
-            UnregisterHotKey(hwnd, 1); DestroyWindow(hwnd); return 0;
+            DestroyWindow(hwnd); return 0;
         case WM_DESTROY: PostQuitMessage(0); return 0;
         }
     } catch (const std::exception& e) { Error(hwnd, e); }
@@ -637,11 +707,9 @@ int Run() {
         welcome.blocks = {{32, 40, 25, L"Make yourself\nat home."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for more."}, {136, 279, 16, L"a little less noise."}};
         app.Add(std::move(welcome)); app.Dirty(); app.Save();
     }
-    if (!o.noHotkey && !RegisterHotKey(app.control, 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'N')) {
-        MessageBoxW(nullptr, L"Ctrl+Alt+N is already in use. Paperdesk still works: launch Paperdesk.exe --new or use a note's right-click menu.", L"Paperdesk", MB_OK | MB_ICONINFORMATION);
-    }
     app.foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, Foreground, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    if (!app.foregroundHook) throw std::runtime_error("Could not subscribe to desktop focus changes");
+    app.desktopHook = SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_REORDER, nullptr, DesktopChanged, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    if (!app.foregroundHook || !app.desktopHook) throw std::runtime_error("Could not subscribe to desktop changes");
     if (loaded.recovered) MessageBoxW(nullptr, L"Your notes were recovered from the previous autosave. The damaged file, if present, was kept in the data folder.", L"Paperdesk", MB_OK | MB_ICONINFORMATION);
     if (o.create) app.New(o.style, o.text);
     else app.Layer();

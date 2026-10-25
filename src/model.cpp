@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <objbase.h>
 #include <cmath>
+#include <algorithm>
 #include <iomanip>
 #include <locale>
 #include <set>
@@ -66,18 +67,24 @@ void Validate(const State& state) {
         if (n.x < -100000 || n.x > 100000 || n.y < -100000 || n.y > 100000) throw std::runtime_error("Invalid note position");
         if (!std::isfinite(n.width) || !std::isfinite(n.height) || n.width < MinWidth || n.height < MinHeight || n.width > MaxSize || n.height > MaxSize) throw std::runtime_error("Invalid paper dimensions");
         if (n.style < Style::Butter || n.style > Style::Parchment || n.blocks.size() > MaxBlocks) throw std::runtime_error("Invalid note style or block count");
+        if (!std::isfinite(n.zoom) || n.zoom < MinZoom || n.zoom > MaxZoom) throw std::runtime_error("Invalid note scale");
         for (const auto& b : n.blocks) {
             if (!std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.size) || b.x < Margin || b.y < Margin || b.x > n.width - Margin - 16 || b.y > n.height - Margin - 16 || b.size < 14 || b.size > 40 || b.text.size() > MaxText || b.text.find(L'\0') != std::wstring::npos) throw std::runtime_error("Invalid text block");
         }
     }
 }
+float ZoomAfterDrag(const Note& original, float dx, float dy) {
+    // Project the drag onto the note diagonal so either axis can resize it.
+    float w = original.width + 2 * Shadow, h = original.height + 2 * Shadow;
+    return std::clamp(original.zoom + (dx * w + dy * h) / (w * w + h * h), MinZoom, MaxZoom);
+}
 std::string Encode(const State& state) {
     Validate(state);
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << "PAPERDESK 1\n" << state.notes.size() << '\n' << std::setprecision(9);
+    out << "PAPERDESK 2\n" << state.notes.size() << '\n' << std::setprecision(9);
     for (const auto& n : state.notes) {
-        out << std::quoted(Utf8(n.id)) << ' ' << n.x << ' ' << n.y << ' ' << n.width << ' ' << n.height << ' ' << static_cast<int>(n.style) << ' ' << n.blocks.size() << '\n';
+        out << std::quoted(Utf8(n.id)) << ' ' << n.x << ' ' << n.y << ' ' << n.width << ' ' << n.height << ' ' << static_cast<int>(n.style) << ' ' << n.zoom << ' ' << n.blocks.size() << '\n';
         for (const auto& b : n.blocks) out << b.x << ' ' << b.y << ' ' << b.size << ' ' << std::quoted(Utf8(b.text)) << '\n';
     }
     return out.str();
@@ -89,14 +96,16 @@ State Decode(std::string_view bytes) {
     std::string magic;
     int version = 0;
     size_t count = 0;
-    if (!(in >> magic >> version >> count) || magic != "PAPERDESK" || version != 1 || count > MaxNotes) throw std::runtime_error("Unrecognised or damaged note file");
+    if (!(in >> magic >> version >> count) || magic != "PAPERDESK" || (version != 1 && version != 2) || count > MaxNotes) throw std::runtime_error("Unrecognised or damaged note file");
     State state;
     for (size_t i = 0; i < count; ++i) {
         Note n;
         std::string id;
         size_t blocks = 0;
         int style = 0;
-        if (!(in >> std::quoted(id) >> n.x >> n.y >> n.width >> n.height >> style >> blocks) || blocks > MaxBlocks) throw std::runtime_error("Damaged note record");
+        if (!(in >> std::quoted(id) >> n.x >> n.y >> n.width >> n.height >> style)) throw std::runtime_error("Damaged note record");
+        if (version == 2 && !(in >> n.zoom)) throw std::runtime_error("Damaged note scale");
+        if (!(in >> blocks) || blocks > MaxBlocks) throw std::runtime_error("Damaged block count");
         n.id = Wide(id);
         n.style = static_cast<Style>(style);
         for (size_t j = 0; j < blocks; ++j) {

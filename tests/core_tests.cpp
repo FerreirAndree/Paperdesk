@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <functional>
+#include <cmath>
 #include <stdexcept>
 using namespace paper;
 static int checks = 0;
@@ -27,7 +28,18 @@ int main() {
         Check(Decode("PAPERDESK 1\n0\n").notes.empty(), "Empty state failed");
         Check(WindowsNewlines(L"a\nb\r\nc\rd") == L"a\r\nb\r\nc\r\nd", "Native editor newline conversion failed");
         Check(WindowsNewlines(WindowsNewlines(L"a\nb")) == L"a\r\nb", "Newline conversion was not idempotent");
-        Reject([&] { Decode("PAPERDESK 2\n0\n"); }, "Future format was accepted");
+        Reject([&] { Decode("PAPERDESK 3\n0\n"); }, "Future format was accepted");
+        auto legacy = Decode("PAPERDESK 1\n1\n\"old\" 10 20 310 310 0 1\n32 43 22 \"Legacy text\"\n");
+        Check(legacy.notes[0].zoom == 1 && legacy.notes[0].blocks[0].text == L"Legacy text", "Version 1 migration lost notes");
+        auto scaled = state;
+        scaled.notes[0].zoom = .5f;
+        Check(Decode(Encode(scaled)).notes[0].zoom == .5f, "Display scale was not persisted");
+        Check(scaled.notes[0].blocks[1].x == state.notes[0].blocks[1].x && scaled.notes[0].blocks[1].size == state.notes[0].blocks[1].size, "Scaling changed the layout");
+        Check(std::abs(ZoomAfterDrag(n, -171, -171) - .5f) < .0001f, "Corner resize is not proportional");
+        Check(ZoomAfterDrag(n, -10000, -10000) == MinZoom, "Minimum zoom was not enforced");
+        Check(ZoomAfterDrag(n, 10000, 10000) == MaxZoom, "Maximum zoom was not enforced");
+        scaled.notes[0].zoom = 0;
+        Reject([&] { Encode(scaled); }, "Zero zoom was accepted");
         Reject([&] { Decode("PAPERDESK 1\n65\n"); }, "Note cap was bypassed");
         Reject([&] { Decode(encoded + "junk"); }, "Trailing corruption was accepted");
         Reject([&] { Wide(std::string("\xC0\xAF", 2)); }, "Invalid UTF-8 was accepted");

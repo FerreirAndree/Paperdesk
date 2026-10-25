@@ -9,7 +9,7 @@ Build with `./scripts/build.ps1 -Test`, or CMake and CTest as described in the R
 Use an isolated profile:
 
 ```powershell
-./build/Paperdesk.exe --data-dir build/manual-profile --no-hotkey
+./build/Paperdesk.exe --data-dir build/manual-profile
 ```
 
 The developer-only `--test-ui` flag adds taskbar visibility so automation tools can discover the windows. It changes window flags, so repeat shell behaviour checks without it. `--render-preview docs/paperdesk.png` generates the README illustration through the actual renderer.
@@ -17,7 +17,7 @@ The developer-only `--test-ui` flag adds taskbar visibility so automation tools 
 - Create, edit, cancel, paste, undo, and finish multiline text. Check Unicode, IME, and selection replacement.
 - Fill a note. Typing or pasting more must preserve accepted text without scrolling or clipping.
 - Place several text blocks; move one without moving the others.
-- Move and resize a note. A resize must not hide existing text.
+- Move and resize a note. Corner resizing must preserve aspect ratio, line breaks, block positions, and the paper's desktop anchor. Check a shrunk note after restarting.
 - Switch each paper style and text size, including a change that would overflow.
 - Duplicate, delete, and undo delete. Delete the last note, restart, and verify it stays gone.
 - Quit and restart. Text, paper style, size, and position must survive.
