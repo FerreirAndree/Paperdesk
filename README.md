@@ -4,7 +4,7 @@ Paper notes for your Windows desktop. No dashboard, title bars, taskbar buttons,
 
 ![Butter, rose and parchment notes rendered by Paperdesk](docs/paperdesk.png)
 
-Paperdesk is a native C++ app with hand-drawn paper edges, soft shadows, and a faint fibre texture. It uses Windows' own graphics and text APIs. There is no browser engine, runtime to install, network connection, account, or telemetry.
+Paperdesk is a native C++ app with soft shadows, textured sticky paper, and aged parchment with worn edges. It uses Windows' own graphics and text APIs. There is no browser engine, runtime to install, network connection, account, or telemetry.
 
 ## Use it
 
@@ -16,7 +16,7 @@ For a stable installation that restores your notes at sign-in, run this from the
 ./scripts/install.ps1
 ```
 
-This installs to `%LOCALAPPDATA%\Programs\Paperdesk`, adds Start menu shortcuts, and registers the app for the current user's sign-in. No administrator access is needed. Use `-NoStartup` to skip startup registration.
+This installs to `%LOCALAPPDATA%\Programs\Paperdesk`, adds Start menu shortcuts, and places `Paperdesk.lnk` in the current user's Startup folder. No administrator access is needed. Use `-NoStartup` to skip startup registration. Upgrades replace the old Run registry entry with this shortcut.
 
 | Action | Gesture |
 | --- | --- |
@@ -27,6 +27,7 @@ This installs to `%LOCALAPPDATA%\Programs\Paperdesk`, adds Start menu shortcuts,
 | Move a note | Alt + drag |
 | Move a text block | Alt + Shift + drag the text |
 | Scale the entire note | Drag its lower-right corner, or Ctrl + Alt + drag |
+| Resize just the text | Right-click directly on a text block → **Text size** → Small, Medium, or Large |
 | Change paper, text size, duplicate or delete | Right-click the note |
 | Create a note | Launch **New paper note** or run `Paperdesk.exe --new` |
 
@@ -40,7 +41,7 @@ After installation, search for **New paper note** in Start or a launcher that in
 
 ```powershell
 & "$env:LOCALAPPDATA/Programs/Paperdesk/Paperdesk.exe" --new
-& "$env:LOCALAPPDATA/Programs/Paperdesk/Paperdesk.exe" --new --style parchment --text "Remember to look up."
+& "$env:LOCALAPPDATA/Programs/Paperdesk/Paperdesk.exe" --new --style parchment --text "Last train: 18:40."
 ```
 
 | Argument | Effect |
@@ -70,10 +71,13 @@ Data stays in `%LOCALAPPDATA%\Paperdesk`:
 - `notes.backup.paper` is the previous committed save.
 - `notes.pending.paper` is a temporary file during saving.
 - A damaged primary file is preserved with a `notes.damaged.*.paper` name if recovery succeeds.
+- `last-run.log` records the latest launch, restored note count, readiness, and clean exit. It contains no note text and is overwritten on the next app launch.
 
 The file records paper styles, positions, sizes, text, and block positions. Saves are debounced by 350 milliseconds, flushed to disk, then atomically replaced. Closing an edit, moving a note, and quitting also save. If both the primary and backup are unreadable, the app reports the error and leaves them intact.
 
 Quit Paperdesk before copying a backup over `notes.paper`. These are plain text files, not encrypted storage. The uninstall script removes the app and shortcuts but keeps your notes.
+
+If notes are missing after sign-in, launch **Paperdesk** from Start to restore them. Check that Paperdesk is enabled in Windows Startup apps and that `shell:startup` contains `Paperdesk.lnk`. Run `Paperdesk.exe --startup enable` or rerun the installer to repair its shortcut. A fresh `last-run.log` distinguishes an attempted launch from an app that never started. Windows controls startup timing; verifying registration is not a substitute for testing a real sign-in.
 
 ## Build
 

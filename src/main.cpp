@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#include <wrl/client.h>
 #include <commctrl.h>
 #include <dwmapi.h>
 #include <algorithm>
@@ -92,19 +94,51 @@ std::wstring Executable() {
     return path;
 }
 void Startup(bool enable) {
-    HKEY key{};
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) throw std::runtime_error("Could not open sign-in startup settings");
-    LSTATUS status;
+    PWSTR folder = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_Startup, KF_FLAG_CREATE, nullptr, &folder)))
+        throw std::runtime_error("Could not locate your Startup folder");
+    std::filesystem::path shortcut = std::filesystem::path(folder) / L"Paperdesk.lnk";
+    CoTaskMemFree(folder);
     if (enable) {
-        std::wstring command = L"\"" + Executable() + L"\" --restore";
-        if (command.size() > 259) { RegCloseKey(key); throw std::runtime_error("Install Paperdesk at a shorter path before enabling startup"); }
-        status = RegSetValueExW(key, L"Paperdesk", 0, REG_SZ, reinterpret_cast<const BYTE*>(command.c_str()), static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
+        using Microsoft::WRL::ComPtr;
+        ComPtr<IShellLinkW> link;
+        if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))))
+            throw std::runtime_error("Could not create the startup shortcut");
+        const auto executable = Executable();
+        if (FAILED(link->SetPath(executable.c_str())) || FAILED(link->SetArguments(L"--restore")) ||
+            FAILED(link->SetWorkingDirectory(std::filesystem::path(executable).parent_path().c_str())) ||
+            FAILED(link->SetDescription(L"Restore your saved Paperdesk notes at sign-in")) ||
+            FAILED(link->SetShowCmd(SW_SHOWNOACTIVATE)))
+            throw std::runtime_error("Could not configure the startup shortcut");
+        ComPtr<IPersistFile> file;
+        auto temporary = shortcut; temporary += L"." + std::to_wstring(GetCurrentProcessId()) + L".pending";
+        if (FAILED(link.As(&file)) || FAILED(file->Save(temporary.c_str(), TRUE))) {
+            DeleteFileW(temporary.c_str());
+            throw std::runtime_error("Could not save the startup shortcut");
+        }
+        file.Reset(); link.Reset();
+        if (!MoveFileExW(temporary.c_str(), shortcut.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            DeleteFileW(temporary.c_str());
+            throw std::runtime_error("Could not install the startup shortcut");
+        }
     } else {
-        status = RegDeleteValueW(key, L"Paperdesk");
-        if (status == ERROR_FILE_NOT_FOUND) status = ERROR_SUCCESS;
+        std::filesystem::remove(shortcut);
     }
-    RegCloseKey(key);
-    if (status != ERROR_SUCCESS) throw std::runtime_error("Could not update sign-in startup settings");
+    // Migrate the old registration only after the replacement is safely installed.
+    HKEY key{};
+    LSTATUS status = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &key);
+    if (status == ERROR_SUCCESS) {
+        status = RegDeleteValueW(key, L"Paperdesk"); RegCloseKey(key);
+    }
+    if (status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND)
+        throw std::runtime_error("Could not remove the legacy startup entry");
+}
+void RecordRun(const std::filesystem::path& directory, const std::string& stage, bool reset = false) noexcept {
+    try {
+        std::ofstream log(directory / L"last-run.log", reset ? std::ios::trunc : std::ios::app);
+        SYSTEMTIME time{}; GetSystemTime(&time);
+        log << time.wYear << '-' << time.wMonth << '-' << time.wDay << ' ' << time.wHour << ':' << time.wMinute << ':' << time.wSecond << " UTC " << stage << '\n';
+    } catch (...) {} // Diagnostics must never prevent note restoration or saving.
 }
 struct App;
 struct NoteView {
@@ -693,7 +727,9 @@ int Run() {
     }
     if (o.quit) return 0;
     App app(o);
+    RecordRun(app.store.Directory(), "starting", true);
     auto loaded = app.store.Load();
+    RecordRun(app.store.Directory(), "loaded notes=" + std::to_string(loaded.state.notes.size()));
     Register(app.instance, NoteClass, NoteView::Proc, CS_DBLCLKS);
     Register(app.instance, EditorClass, Editor::Proc);
     Register(app.instance, controllerName.c_str(), App::Proc);
@@ -706,7 +742,7 @@ int Run() {
         Note welcome;
         welcome.id = NewId();
         welcome.width = 330; welcome.height = 340;
-        welcome.blocks = {{32, 40, 25, L"Make yourself\nat home."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for more."}, {136, 279, 16, L"a little less noise."}};
+        welcome.blocks = {{32, 40, 25, L"Your desktop.\nYour notes."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for more."}, {180, 279, 16, L"quick start"}};
         app.Add(std::move(welcome)); app.Dirty(); app.Save();
     }
     app.foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, Foreground, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
@@ -715,10 +751,12 @@ int Run() {
     if (loaded.recovered) MessageBoxW(nullptr, L"Your notes were recovered from the previous autosave. The damaged file, if present, was kept in the data folder.", L"Paperdesk", MB_OK | MB_ICONINFORMATION);
     if (o.create) app.New(o.style, o.text);
     else app.Layer();
+    RecordRun(app.store.Directory(), "ready");
     MSG msg{};
     BOOL status;
     while ((status = GetMessageW(&msg, nullptr, 0, 0)) > 0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     running = nullptr;
+    RecordRun(app.store.Directory(), status == -1 ? "message-loop failure" : "closed");
     return status == -1 ? 1 : 0;
 }
 }

@@ -8,7 +8,7 @@ namespace paper {
 const wchar_t* FontName(Style style) { return style == Style::Parchment ? L"Georgia" : L"Segoe Print"; }
 COLORREF PaperColor(Style style) {
     if (style == Style::Rose) return RGB(238, 191, 185);
-    if (style == Style::Parchment) return RGB(231, 214, 177);
+    if (style == Style::Parchment) return RGB(241, 226, 194);
     return RGB(244, 221, 129);
 }
 static StringFormat TextFormat() {
@@ -36,23 +36,57 @@ bool Fits(const Note& note, const Block& block) {
 bool AllFit(const Note& note) {
     return std::all_of(note.blocks.begin(), note.blocks.end(), [&](const auto& b) { return Fits(note, b); });
 }
-static void PaperPath(GraphicsPath& path, float w, float h, Style style) {
-    if (style == Style::Parchment) {
-        std::vector<PointF> p;
-        for (int x = 0; x <= static_cast<int>(w); x += 9) p.emplace_back(static_cast<float>(x), 1.5f + 1.2f * std::sin(x * 1.71f));
-        p.emplace_back(w, 2.f);
-        for (int y = 8; y < static_cast<int>(h); y += 11) p.emplace_back(w - 1.5f + std::sin(y * 2.31f), static_cast<float>(y));
-        p.emplace_back(w - 1, h - 1);
-        for (int x = static_cast<int>(w) - 9; x > 0; x -= 9) p.emplace_back(static_cast<float>(x), h - 1.5f + std::sin(x * 1.81f));
-        p.emplace_back(1.f, h - 1);
-        for (int y = static_cast<int>(h) - 9; y > 0; y -= 11) p.emplace_back(1.4f + std::sin(y * 2.17f), static_cast<float>(y));
-        path.AddPolygon(p.data(), static_cast<INT>(p.size()));
-    } else {
-        path.AddLine(1.f, 1.f, w - 1, 1.f);
-        path.AddLine(w - 1, 1.f, w - 2, h - 12);
-        path.AddBezier(w - 2, h - 12, w - 30, h - 3, w * .5f, h, 1.f, h - 6);
-        path.CloseFigure();
-    }
+static void PaperPath(GraphicsPath& path, float w, float h) {
+    path.AddLine(1.f, 1.f, w - 1, 1.f);
+    path.AddLine(w - 1, 1.f, w - 2, h - 12);
+    path.AddBezier(w - 2, h - 12, w - 30, h - 3, w * .5f, h, 1.f, h - 6);
+    path.CloseFigure();
+}
+static void DrawParchment(Graphics& g, float width, float height) {
+    // Cache decoded pixels, not GDI+ objects: the cache remains safe after shutdown.
+    struct Texture { UINT width = 0, height = 0; std::vector<BYTE> pixels; };
+    static const Texture texture = [] {
+        HMODULE module = GetModuleHandleW(nullptr);
+        HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(102), RT_RCDATA);
+        DWORD size = resource ? SizeofResource(module, resource) : 0;
+        HGLOBAL loaded = resource ? LoadResource(module, resource) : nullptr;
+        const void* source = loaded ? LockResource(loaded) : nullptr;
+        if (!source || !size) throw std::runtime_error("The parchment texture is missing");
+        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, size);
+        if (!memory) throw std::runtime_error("Could not allocate the parchment texture");
+        void* bytes = GlobalLock(memory);
+        if (!bytes) { GlobalFree(memory); throw std::runtime_error("Could not read the parchment texture"); }
+        memcpy(bytes, source, size); GlobalUnlock(memory);
+        IStream* raw = nullptr;
+        if (FAILED(CreateStreamOnHGlobal(memory, TRUE, &raw))) {
+            GlobalFree(memory); throw std::runtime_error("Could not open the parchment texture");
+        }
+        auto release = [](IStream* stream) { stream->Release(); };
+        std::unique_ptr<IStream, decltype(release)> stream(raw, release);
+        Bitmap decoded(stream.get());
+        if (decoded.GetLastStatus() != Ok) throw std::runtime_error("Could not decode the parchment texture");
+        Texture result; result.width = decoded.GetWidth(); result.height = decoded.GetHeight();
+        result.pixels.resize(static_cast<size_t>(result.width) * result.height * 4);
+        BitmapData data{}; Rect rect(0, 0, result.width, result.height);
+        if (decoded.LockBits(&rect, ImageLockModeRead, PixelFormat32bppPARGB, &data) != Ok)
+            throw std::runtime_error("Could not access the parchment pixels");
+        for (UINT y = 0; y < result.height; ++y)
+            memcpy(result.pixels.data() + static_cast<size_t>(y) * result.width * 4,
+                static_cast<const BYTE*>(data.Scan0) + static_cast<ptrdiff_t>(y) * data.Stride, result.width * 4);
+        decoded.UnlockBits(&data);
+        return result;
+    }();
+    Bitmap paper(texture.width, texture.height, texture.width * 4, PixelFormat32bppPARGB,
+        const_cast<BYTE*>(texture.pixels.data()));
+    auto state = g.Save();
+    g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    ImageAttributes attributes; attributes.SetWrapMode(WrapModeTileFlipXY);
+    // Make the near-opaque paper body solid while retaining soft torn-edge alpha.
+    ColorMatrix opacity{{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1.02f, 0}, {0, 0, 0, 0, 1}}};
+    attributes.SetColorMatrix(&opacity);
+    g.DrawImage(&paper, RectF(0, 0, width, height), 0, 0,
+        static_cast<float>(texture.width), static_cast<float>(texture.height), UnitPixel, &attributes);
+    g.Restore(state);
 }
 std::unique_ptr<Bitmap> DrawNote(const Note& note, float scale, int hiddenBlock, bool full) {
     int width = static_cast<int>(std::ceil((note.width + Shadow * 2) * scale));
@@ -66,48 +100,46 @@ std::unique_ptr<Bitmap> DrawNote(const Note& note, float scale, int hiddenBlock,
     g.ScaleTransform(scale, scale);
     g.TranslateTransform(Shadow, Shadow);
     const float w = note.width, h = note.height;
-    GraphicsPath path;
-    PaperPath(path, w, h, note.style);
-    // Small contact shadow with a softer lift along the free lower edge.
-    for (int i = 10; i >= 1; --i) {
-        auto saved = g.Save();
-        g.TranslateTransform(0, 2 + i * .4f);
-        Pen shadow(Color(static_cast<BYTE>(i == 1 ? 27 : 4), 26, 22, 15), static_cast<float>(i));
-        g.DrawPath(&shadow, &path);
-        g.Restore(saved);
-    }
-    auto base = PaperColor(note.style);
-    Color top(255, static_cast<BYTE>(std::min(255, GetRValue(base) + 8)), static_cast<BYTE>(std::min(255, GetGValue(base) + 9)), static_cast<BYTE>(std::min(255, GetBValue(base) + 14)));
-    Color bottom(255, GetRValue(base), GetGValue(base), GetBValue(base));
-    LinearGradientBrush paper(PointF(0, 0), PointF(w * .28f, h), top, bottom);
-    paper.SetWrapMode(WrapModeTileFlipXY);
-    g.FillPath(&paper, &path);
     auto clipped = g.Save();
-    g.SetClip(&path);
-    if (note.style != Style::Parchment) {
+    if (note.style == Style::Parchment) {
+        DrawParchment(g, w, h);
+        g.SetClip(RectF(0, 0, w, h));
+    } else {
+        GraphicsPath path;
+        PaperPath(path, w, h);
+        // Small contact shadow with a softer lift along the free lower edge.
+        for (int i = 10; i >= 1; --i) {
+            auto saved = g.Save();
+            g.TranslateTransform(0, 2 + i * .4f);
+            Pen shadow(Color(static_cast<BYTE>(i == 1 ? 27 : 4), 26, 22, 15), static_cast<float>(i));
+            g.DrawPath(&shadow, &path);
+            g.Restore(saved);
+        }
+        auto base = PaperColor(note.style);
+        Color top(255, static_cast<BYTE>(std::min(255, GetRValue(base) + 8)), static_cast<BYTE>(std::min(255, GetGValue(base) + 9)), static_cast<BYTE>(std::min(255, GetBValue(base) + 14)));
+        Color bottom(255, GetRValue(base), GetGValue(base), GetBValue(base));
+        LinearGradientBrush paper(PointF(0, 0), PointF(w * .28f, h), top, bottom);
+        paper.SetWrapMode(WrapModeTileFlipXY);
+        g.FillPath(&paper, &path);
+        g.SetClip(&path);
         LinearGradientBrush glue(PointF(0, 0), PointF(0, 43), Color(16, 117, 94, 49), Color(0, 117, 94, 49));
         glue.SetWrapMode(WrapModeTileFlipXY);
         g.FillRectangle(&glue, 0.f, 0.f, w, 43.f);
         LinearGradientBrush curl(PointF(0, h - 24), PointF(0, h), Color(0, 255, 255, 232), Color(42, 255, 255, 232));
         curl.SetWrapMode(WrapModeTileFlipXY);
         g.FillRectangle(&curl, 0.f, h - 24, w, 24.f);
-    } else {
-        for (int i = 8; i >= 1; --i) {
-            Pen edge(Color(5, 107, 71, 35), static_cast<float>(i * 2));
-            g.DrawPath(&edge, &path);
+        // Deterministic fibres, painted only on changes. No images, timers or animation loop.
+        uint32_t seed = 3721;
+        auto random = [&]() { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.f; };
+        int grains = static_cast<int>(w * h / 29);
+        for (int i = 0; i < grains; ++i) {
+            float x = random() * w, y = random() * h;
+            SolidBrush grain(Color(static_cast<BYTE>(5 + random() * 9), 115, 86, 43));
+            g.FillRectangle(&grain, x, y, .45f + random() * .7f, .45f);
         }
+        Pen rim(Color(48, 140, 110, 63), .65f);
+        g.DrawPath(&rim, &path);
     }
-    // Deterministic fibres, painted only on changes. No images, timers or animation loop.
-    uint32_t seed = 3721;
-    auto random = [&]() { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.f; };
-    int grains = static_cast<int>(w * h / 29);
-    for (int i = 0; i < grains; ++i) {
-        float x = random() * w, y = random() * h;
-        SolidBrush grain(Color(static_cast<BYTE>(5 + random() * 9), 115, 86, 43));
-        g.FillRectangle(&grain, x, y, .45f + random() * .7f, .45f);
-    }
-    Pen rim(Color(48, 140, 110, 63), .65f);
-    g.DrawPath(&rim, &path);
     SolidBrush ink(Color(245, 60, 52, 43));
     auto format = TextFormat();
     for (size_t i = 0; i < note.blocks.size(); ++i) {
@@ -120,7 +152,7 @@ std::unique_ptr<Bitmap> DrawNote(const Note& note, float scale, int hiddenBlock,
     if (full) {
         Font font(L"Segoe UI", 11, FontStyleRegular, UnitPixel);
         SolidBrush warn(Color(255, 126, 63, 49));
-        g.DrawString(L"Paper is full. Resize or shorten the text.", -1, &font, PointF(20, h - 20), &warn);
+        g.DrawString(L"Paper is full. Use smaller text.", -1, &font, PointF(20, h - 20), &warn);
     }
     g.Restore(clipped);
     return bitmap;
@@ -164,9 +196,10 @@ void RenderPreview(const std::wstring& path) {
         Note n;
         n.style = static_cast<Style>(i);
         n.width = 310; n.height = 320;
-        if (i == 0) n.blocks = {{32, 40, 27, L"One thing\nat a time."}, {35, 158, 18, L"Make something small.\nMake it yours."}, {142, 254, 16, L"you've got this"}};
-        if (i == 1) n.blocks = {{32, 42, 26, L"A good day"}, {33, 109, 18, L"Fresh air.\nCall someone you miss.\nLeave room to wander."}, {130, 258, 16, L"that's enough."}};
-        if (i == 2) n.blocks = {{32, 43, 28, L"A thought\nworth keeping"}, {33, 143, 21, L"There is no hurry.\nThe quiet work counts,\ntoo."}, {174, 258, 16, L"25 October"}};
+        if (i == 0) n.blocks = {{32, 40, 27, L"Before Friday"}, {33, 108, 18, L"Send the final files.\nBook the train.\nBack up the project."}, {129, 258, 16, L"16:30 / review"}};
+        if (i == 1) n.blocks = {{32, 42, 26, L"Next build"}, {33, 109, 18, L"Keyboard navigation\nOffline mode\nExport to PDF"}, {123, 258, 16, L"test on laptop"}};
+        if (i == 2) n.blocks = {{32, 43, 28, L"Field notes"}, {33, 113, 21, L"North trail, 8 km.\nWater at the old mill.\nLast train: 18:40."}, {174, 258, 16, L"26 October"}};
+        if (!AllFit(n)) throw std::runtime_error("Preview text does not fit the note");
         auto image = DrawNote(n, 1.1f);
         g.DrawImage(image.get(), 55 + i * 397, 91);
     }

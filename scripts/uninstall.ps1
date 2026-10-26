@@ -6,7 +6,8 @@ $expected = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('Loc
 if ($install -ne $expected) { throw 'The install directory is not the expected Paperdesk directory.' }
 $executable = Join-Path $install 'Paperdesk.exe'
 if (Test-Path -LiteralPath $executable) {
-    Start-Process -FilePath $executable -ArgumentList '--startup','disable' -WindowStyle Hidden -Wait
+    $registration = Start-Process -FilePath $executable -ArgumentList '--startup','disable' -WindowStyle Hidden -Wait -PassThru
+    if ($registration.ExitCode -ne 0) { throw 'Paperdesk could not remove sign-in startup.' }
     Start-Process -FilePath $executable -ArgumentList '--quit' -WindowStyle Hidden -Wait
     $deadline = [DateTime]::UtcNow.AddSeconds(5)
     while (Get-Process Paperdesk -ErrorAction SilentlyContinue | Where-Object Path -eq $executable) {

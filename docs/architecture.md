@@ -14,11 +14,11 @@ Paperdesk uses `SetWindowPos` to lower notes when a different app gains focus. W
 
 This is an approximation of desktop attachment. When the desktop is foreground, a note can overlap a visible, unfocused application window. Selecting that application lowers the notes again. Task View, virtual desktops, Explorer replacements, and Show desktop behaviour can vary across Windows versions. They need manual verification on the target Windows build. Notes are not guaranteed to be visible in every shell transition.
 
-Startup registration uses the current user's documented Run key. Windows controls when startup apps launch; it may delay them after sign-in. Paperdesk cannot promise to draw before Explorer is ready or on the lock screen.
+Startup registration creates a standard shell shortcut in the current user's Startup folder through IShellLink and IPersistFile. The shortcut launches the installed executable with --restore and no activation. A successful registration removes the old Paperdesk Run entry; disabling startup removes both registrations. Installation checks the registration process's exit code. Windows controls when startup apps launch; it may delay them after sign-in. Paperdesk cannot promise to draw before Explorer is ready or on the lock screen.
 
 ## Rendering and editing
 
-GDI+ draws paper and text into premultiplied-alpha bitmaps for `UpdateLayeredWindow`. Fibres are deterministic and generated in code. Redraws happen only on content, geometry, DPI, or feedback changes. Each note uses logical dimensions and physical desktop coordinates, allowing negative monitor positions. Missing monitors are handled by clamping notes into the nearest work area.
+GDI+ draws paper and text into premultiplied-alpha bitmaps for `UpdateLayeredWindow`. Sticky-paper fibres are deterministic and generated in code. Parchment uses an embedded PNG with transparent worn edges; its decoded pixel cache is shared by all parchment notes and has no GDI+ object lifetime beyond shutdown. See [asset provenance and prompt](assets.md). Redraws happen only on content, geometry, DPI, or feedback changes. Each note uses logical dimensions and physical desktop coordinates, allowing negative monitor positions. Missing monitors are handled by clamping notes into the nearest work area.
 
 Text uses Segoe Print on sticky paper and Georgia on parchment. Windows supplies both fonts; font files are not redistributed. The renderer measures text before edits and style changes are accepted. Resizing changes a separate persisted zoom factor. Layout dimensions, text positions, font sizes, and wrapping widths remain unchanged; drawing and input coordinates use the product of display DPI and note zoom. The lower-right corner and Ctrl+Alt-drag both scale the note proportionally around its top-left window position.
 
@@ -36,4 +36,5 @@ For shell diagnostics, `--trace-desktop` enables a bounded log of foreground cla
 
 - [Window relationships and Z-order](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features)
 - [SetWinEventHook](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwineventhook)
-- [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
+- [Windows Startup folder](https://support.microsoft.com/en-au/windows/experience/startup-boot/configure-startup-applications-in-windows)
+- [Shell links](https://learn.microsoft.com/en-us/windows/win32/shell/links)

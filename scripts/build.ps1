@@ -28,7 +28,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
         & './paperdesk_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-        & cl @common "$root/src/model.cpp" "$root/src/render.cpp" "$root/tests/render_tests.cpp" '/Fe:paperdesk_render_tests.exe' /link gdiplus.lib user32.lib gdi32.lib ole32.lib
+        & cl @common "$root/src/model.cpp" "$root/src/render.cpp" "$root/tests/render_tests.cpp" '/Fe:paperdesk_render_tests.exe' /link app.res gdiplus.lib user32.lib gdi32.lib ole32.lib
         if ($LASTEXITCODE -ne 0) { throw 'Rendering test build failed.' }
         & './paperdesk_render_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Rendering tests failed.' }

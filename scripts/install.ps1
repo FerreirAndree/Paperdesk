@@ -31,7 +31,10 @@ foreach ($item in @(@('New paper note', '--new'), @('Paperdesk', '--restore'), @
     $shortcut.Description = 'Paper notes for your desktop'
     $shortcut.Save()
 }
-if (-not $NoStartup) { Start-Process -FilePath $target -ArgumentList '--startup','enable' -WindowStyle Hidden -Wait }
+if (-not $NoStartup) {
+    $registration = Start-Process -FilePath $target -ArgumentList '--startup','enable' -WindowStyle Hidden -Wait -PassThru
+    if ($registration.ExitCode -ne 0) { throw 'Paperdesk could not register sign-in startup.' }
+}
 if (-not $NoLaunch) { Start-Process -FilePath $target -ArgumentList '--restore' -WindowStyle Hidden }
 Write-Host "Installed to $target"
 Write-Host 'Launch New paper note from Start or your launcher. No system-wide keyboard shortcut is registered.'

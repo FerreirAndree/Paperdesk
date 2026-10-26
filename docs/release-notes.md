@@ -1,13 +1,13 @@
-Paperdesk 0.1.2 fixes notes disappearing after Win+D on the reported Windows setup.
+Paperdesk 0.1.3 updates parchment, example notes, and sign-in startup.
 
-Notes temporarily enter the topmost window band while Explorer's desktop has focus. Returning to an app removes that status and lowers the notes. The user confirmed that Win+D keeps notes visible with this build.
+- Parchment now uses an embedded texture with worn edges, age spots, fibres, and faint creases. The app decodes it once when first used. It works offline and requires no extra installed files.
+- The README preview uses practical reminders: deadlines, build tasks, and trail notes. The welcome note also drops the motivational copy.
+- Sign-in startup now uses a standard shortcut in the current user's Startup folder. Successful registration removes the legacy Run entry. Installation and removal check registration errors instead of silently continuing.
+- A small last-run.log records whether the app started, loaded notes, and reached readiness. It contains no note text and is replaced on the next launch.
+- The README explains how to resize individual text blocks: right-click directly on the text, then choose Text size.
 
-This release retains proportional resizing and launcher-only creation from 0.1.1. Drag the lower-right corner to scale the paper and its contents together. Use **New paper note** in your launcher or `Paperdesk.exe --new`. No global hotkeys are registered.
+Startup verification: Windows lists the new shortcut in its startup inventory. Launching that exact shortcut restored the saved note without changing its file; enable and disable were also checked. A real reboot/sign-in is still needed to confirm automatic launch on the reported machine.
 
-Validation includes 202 core checks, 62 rendering/layout checks, and 52 native window-layer checks. The verification report records remaining hardware and shell coverage.
+Validation: 202 core and 62 rendering/layout checks passed locally. The existing desktop-layer test remains intermittent on this host; the Win+D implementation is unchanged from 0.1.2. See the verification report for details.
 
-Extract the ZIP and run `Paperdesk.exe`. To install and restore notes at sign-in, run `./scripts/install.ps1` from the extracted folder in PowerShell. `./scripts/uninstall.ps1` retains saved notes.
-
-This remains a preview using documented Windows APIs to approximate desktop attachment. The note format remains version 2, compatible with 0.1.1. Version 1 files upgrade automatically when saved; keep a backup before downgrading to 0.1.0.
-
-The executable is unsigned. A SHA-256 checksum accompanies the ZIP.
+Extract the ZIP and run ./scripts/install.ps1 in PowerShell to install or update. Saved notes remain compatible with 0.1.1 and 0.1.2. The app is an unsigned preview; a SHA-256 checksum accompanies the download.
