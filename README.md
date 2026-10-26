@@ -29,11 +29,14 @@ This installs to `%LOCALAPPDATA%\Programs\Paperdesk`, adds Start menu shortcuts,
 | Scale the entire note | Drag its lower-right corner, or Ctrl + Alt + drag |
 | Resize just the text | Right-click directly on a text block → **Text size** → Small, Medium, or Large |
 | Change paper, text size, duplicate or delete | Right-click the note |
+| Open the quick reference | Right-click → **Quick reference**, or F1 while writing |
 | Create a note | Launch **New paper note** or run `Paperdesk.exe --new` |
 
 There are three paper styles: butter, rose, and parchment. Text blocks can sit anywhere inside the paper margins and may overlap. Each block wraps toward the right edge. Text that would exceed the paper is rejected, leaving the previous text intact. Resizing scales the whole note between 35% and 200%, including its text, margins, and spacing. It preserves the aspect ratio, block positions, and line breaks. The right-click menu also offers smaller, larger, and original-size actions. Changing a text block's font size is blocked if it would clip the text. There are no scrollbars.
 
 Right-click any remaining note to undo a deleted note during the current session. The previous autosave is also kept on disk. When the last note is gone, the app stays available through its launcher shortcut and command. Paperdesk does not register any global keyboard shortcuts.
+
+The quick reference is a compact, movable card beside the note. It can stay open while you work. Escape or its close icon dismisses it; opening it with F1 preserves the current edit and returns to the text when closed. It is also available through **Paperdesk help** in Start or `Paperdesk.exe --help`.
 
 ## Launchers and commands
 
@@ -52,7 +55,7 @@ After installation, search for **New paper note** in Start or a launcher that in
 | `--restore` | Restore saved notes without taking focus, also the default |
 | `--quit` | Save and close the running app |
 | `--startup enable` / `--startup disable` | Register or remove sign-in startup |
-| `--help` | Show the gesture reference |
+| `--help` | Open the quick-reference card |
 | `--data-dir "path"` | Use a separate notes directory and instance |
 
 A second launch sends its command to the existing process. It does not open another copy of your notes. The old `--no-hotkey` flag remains accepted for compatibility, but is no longer necessary.

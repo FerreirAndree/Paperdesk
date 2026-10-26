@@ -24,6 +24,10 @@ Text uses Segoe Print on sticky paper and Georgia on parchment. Windows supplies
 
 A temporary native EDIT control handles typing, selection, paste, undo, and input methods. It grows within the available paper area. Both the native editor's metrics and the paper renderer's metrics must fit. Overflow restores the last accepted text; the control is reset to its first line. Saving removes the control and redraws the block as ink. Input is normalised to Windows newlines while editing.
 
+## Quick reference
+
+The quick reference is a modeless native popup owned by its note. Standard text controls expose the action labels to accessibility tools; custom painting supplies the rounded card and close icon. The card is excluded from the taskbar in normal use, positioned beside its owner, and clamped to the monitor work area. It has no timer or global key hook. F1 in the editor preserves the edit session; explicit dismissal posts focus restoration after the dialog has closed. The --help launcher runs the same card in a short-lived process without loading or changing notes.
+
 ## Storage
 
 `model.cpp` owns the versioned UTF-8 format, limits and validation. `storage.cpp` writes to a same-directory temporary file, calls `FlushFileBuffers`, and commits with `ReplaceFileW`, retaining a backup. The first save uses `MoveFileExW` with write-through. A backup is read before a damaged original is renamed. An unreadable primary and backup stop loading instead of replacing user data with an empty state.

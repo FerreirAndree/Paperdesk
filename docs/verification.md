@@ -1,5 +1,13 @@
 # Verification
 
+## Version 0.1.4, 26 October 2026
+
+The quick reference was checked in an isolated test profile. Its final layout is a 400 by 316 pixel card at the tested display scale, with eight action/gesture rows. Visual inspection confirmed no title bar, no introductory paragraphs, and a small custom close icon. Native text controls expose the rows through Windows accessibility.
+
+Verified live: open from the note's context menu; open with F1 while editing; retain the draft and editor; dismiss with Escape and return keyboard focus to the text field; subsequently cancel editing; dismiss with the close icon. The standalone --help launcher was checked from a hidden process launch and exits when dismissed. A duplicate WM_HELP path discovered during testing now retains the original editor instead of discarding the focus target.
+
+The local build passed 202 core and 62 rendering/layout checks. The unchanged desktop-layer suite again failed its already-recorded elevation assertion on this host. Mixed-DPI and very small display work areas remain unverified.
+
 ## Version 0.1.3, 26 October 2026
 
 At the reported morning sign-in, Paperdesk was not running. The saved file still contained one note. The old Run registration existed, but did not appear in Windows' startup inventory; no Paperdesk application crash event was found. The exact reason Windows did not launch it was not established.

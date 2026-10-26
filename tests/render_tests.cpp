@@ -50,7 +50,7 @@ int main() {
             }
         }
         note.width = 330; note.height = 340; note.style = Style::Butter;
-        note.blocks = {{32, 40, 25, L"Your desktop.\nYour notes."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for more."}, {180, 279, 16, L"quick start"}};
+        note.blocks = {{32, 40, 25, L"Your desktop.\nYour notes."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for commands."}, {180, 279, 16, L"quick start"}};
         Check(AllFit(note), "The welcome note clips its own instructions");
         note.height = MinHeight;
         Check(!AllFit(note), "Shrinking accepted clipped content");

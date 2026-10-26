@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "render.h"
 #include "desktop.h"
+#include "help.h"
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
@@ -65,27 +66,7 @@ Options Parse(const wchar_t* command) {
     return o;
 }
 void Error(HWND owner, const std::exception& e) { MessageBoxW(owner, Wide(e.what()).c_str(), L"Paperdesk", MB_OK | MB_ICONERROR); }
-void Help(HWND owner) {
-    MessageBoxW(owner,
-        L"A little paper, right on your desktop.\n\n"
-        L"Double-click paper    Write a new text block\n"
-        L"Double-click text        Edit that block\n"
-        L"Alt + drag                     Move the paper\n"
-        L"Alt + Shift + drag       Move a text block\n"
-        L"Drag lower-right corner    Scale the entire note\n"
-        L"Ctrl + Alt + drag              Also scales the note\n"
-        L"Right-click                   Paper, text size, delete, help\n\n"
-        L"While writing: Ctrl+Enter saves; Escape cancels.\n"
-        L"Click away to finish. Text never scrolls off the paper.\n\n"
-        L"Launch 'New paper note' from Start or your launcher.\n"
-        L"Launcher command: Paperdesk.exe --new\n"
-        L"Optional: --style butter|rose|parchment --text \"Remember this\"\n\n"
-        L"Deleted a note? Right-click another and choose Undo delete.\n"
-        L"With no notes left, run Paperdesk.exe --new.\n\n"
-        L"Paperdesk.exe --quit closes the app and keeps your notes.\n"
-        L"Paperdesk.exe --startup enable|disable controls sign-in startup.",
-        L"Paperdesk / How to use", MB_OK | MB_ICONINFORMATION);
-}
+void Help(HWND owner) { ShowCommandHelp(owner); }
 std::wstring Executable() {
     std::wstring path(32768, L'\0');
     DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
@@ -409,7 +390,7 @@ void NoteView::Menu(POINT screen) {
     AppendMenuW(menu, MF_STRING, 32, L"Delete note");
     AppendMenuW(menu, MF_STRING | (app->deleted.empty() ? MF_GRAYED : 0), 33, L"Undo delete");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, 40, L"How to use");
+    AppendMenuW(menu, MF_STRING, 40, L"Quick reference\tF1");
     AppendMenuW(menu, MF_STRING, 41, L"Quit Paperdesk");
     SetForegroundWindow(window);
     UINT choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, window, nullptr);
@@ -450,6 +431,12 @@ LRESULT CALLBACK NoteView::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     if (!v) return DefWindowProcW(hwnd, msg, wp, lp);
     switch (msg) {
+    case WM_HELP:
+        ShowCommandHelp(hwnd, v->app->editor && v->app->editor->view == v ? v->app->editor->input : nullptr);
+        return TRUE;
+    case WM_KEYDOWN:
+        if (wp == VK_F1) { Help(hwnd); return 0; }
+        break;
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
     case WM_NCHITTEST: {
         POINT p{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}; ScreenToClient(hwnd, &p);
@@ -614,6 +601,7 @@ LRESULT CALLBACK Editor::InputProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return result;
     }
     if (msg == WM_KEYDOWN) {
+        if (wp == VK_F1) { ShowCommandHelp(e->view->window, hwnd); return 0; }
         if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) { SendMessageW(hwnd, EM_SETSEL, 0, -1); return 0; }
         if (wp == VK_ESCAPE || (wp == VK_RETURN && (GetKeyState(VK_CONTROL) & 0x8000))) {
             PostMessageW(e->app->control, FinishEditor, wp == VK_ESCAPE, reinterpret_cast<LPARAM>(e->window)); return 0;
@@ -630,12 +618,16 @@ LRESULT CALLBACK Editor::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(e));
     }
     if (!e) return DefWindowProcW(hwnd, msg, wp, lp);
+    if (msg == RestoreCommandHelpFocus && reinterpret_cast<HWND>(wp) == e->input && !e->ending) {
+        SetForegroundWindow(hwnd); SetFocus(e->input); return 0;
+    }
     if (msg == WM_COMMAND && HIWORD(wp) == EN_CHANGE) { e->Change(); return 0; }
     if (msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORSTATIC) {
         HDC dc = reinterpret_cast<HDC>(wp); SetTextColor(dc, RGB(60, 52, 43)); SetBkColor(dc, PaperColor(e->view->note.style));
         return reinterpret_cast<LRESULT>(e->brush);
     }
-    if (msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE && !e->ending) PostMessageW(e->app->control, FinishEditor, FALSE, reinterpret_cast<LPARAM>(hwnd));
+    if (msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE && !e->ending && !IsCommandHelpWindow(reinterpret_cast<HWND>(lp)))
+        PostMessageW(e->app->control, FinishEditor, FALSE, reinterpret_cast<LPARAM>(hwnd));
     if (msg == WM_CLOSE) { PostMessageW(e->app->control, FinishEditor, FALSE, reinterpret_cast<LPARAM>(hwnd)); return 0; }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -706,7 +698,8 @@ std::wstring ProfileKey(const std::filesystem::path& directory) {
 }
 int Run() {
     auto o = Parse(GetCommandLineW());
-    if (o.help) { Help(nullptr); return 0; }
+    SetCommandHelpTestMode(o.testUI);
+    if (o.help) return RunCommandHelp();
     if (!o.startup.empty()) { Startup(o.startup == L"enable"); return 0; }
     if (!o.preview.empty()) { RenderPreview(o.preview); return 0; }
     auto key = ProfileKey(o.directory);
@@ -742,7 +735,7 @@ int Run() {
         Note welcome;
         welcome.id = NewId();
         welcome.width = 330; welcome.height = 340;
-        welcome.blocks = {{32, 40, 25, L"Your desktop.\nYour notes."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for more."}, {180, 279, 16, L"quick start"}};
+        welcome.blocks = {{32, 40, 25, L"Your desktop.\nYour notes."}, {32, 151, 17, L"Double-click to write.\nAlt + drag to move.\nRight-click for commands."}, {180, 279, 16, L"quick start"}};
         app.Add(std::move(welcome)); app.Dirty(); app.Save();
     }
     app.foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, Foreground, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
@@ -754,7 +747,9 @@ int Run() {
     RecordRun(app.store.Directory(), "ready");
     MSG msg{};
     BOOL status;
-    while ((status = GetMessageW(&msg, nullptr, 0, 0)) > 0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
+    while ((status = GetMessageW(&msg, nullptr, 0, 0)) > 0) {
+        if (!HandleCommandHelpMessage(msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
+    }
     running = nullptr;
     RecordRun(app.store.Directory(), status == -1 ? "message-loop failure" : "closed");
     return status == -1 ? 1 : 0;
