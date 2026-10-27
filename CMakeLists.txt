@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(Paperdesk VERSION 0.1.4 LANGUAGES CXX RC)
+project(Paperdesk VERSION 0.1.5 LANGUAGES CXX RC)
 if(NOT WIN32)
   message(FATAL_ERROR "Paperdesk uses the native Windows desktop APIs.")
 endif()

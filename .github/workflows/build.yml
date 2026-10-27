@@ -15,6 +15,9 @@ jobs:
         run: cmake --build out --config Release --parallel
       - name: Test
         run: ctest --test-dir out -C Release --output-on-failure
+      - name: Startup regression tests
+        shell: pwsh
+        run: ./tests/startup_tests.ps1 -Executable out/Release/Paperdesk.exe
       - name: Package
         shell: pwsh
         run: ./scripts/package.ps1 -Executable out/Release/Paperdesk.exe

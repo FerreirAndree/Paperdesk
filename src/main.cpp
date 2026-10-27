@@ -29,7 +29,7 @@ constexpr UINT DesktopEvent = WM_APP + 1, FinishEditor = WM_APP + 2, ExecuteComm
 constexpr ULONG_PTR IpcMagic = 0x50415052;
 struct Options {
     std::filesystem::path directory = DefaultDirectory();
-    bool create = false, quit = false, help = false, testUI = false, traceDesktop = false;
+    bool create = false, quit = false, help = false, restore = false, testUI = false, traceDesktop = false;
     Style style = Style::Butter;
     std::wstring text, preview, startup;
 };
@@ -50,7 +50,7 @@ Options Parse(const wchar_t* command) {
             else if (a == L"--text") o.text = value();
             else if (a == L"--data-dir") o.directory = value();
             else if (a == L"--quit") o.quit = true;
-            else if (a == L"--restore") {}
+            else if (a == L"--restore") o.restore = true;
             else if (a == L"--no-hotkey") {} // Backwards-compatible no-op. No global shortcuts exist.
             else if (a == L"--trace-desktop") o.traceDesktop = true;
             else if (a == L"--test-ui") o.testUI = true;
@@ -721,6 +721,19 @@ int Run() {
     if (o.quit) return 0;
     App app(o);
     RecordRun(app.store.Directory(), "starting", true);
+    // A packaged launcher can redirect AppData without changing its apparent
+    // path. Record the backing directory so sign-in diagnostics reveal this.
+    HANDLE directory = CreateFileW(app.store.Directory().c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (directory != INVALID_HANDLE_VALUE) {
+        std::wstring physical(32768, L'\0');
+        DWORD length = GetFinalPathNameByHandleW(directory, physical.data(), static_cast<DWORD>(physical.size()), FILE_NAME_NORMALIZED);
+        CloseHandle(directory);
+        if (length && length < physical.size()) {
+            physical.resize(length);
+            RecordRun(app.store.Directory(), "storage=" + Utf8(physical));
+        }
+    }
     auto loaded = app.store.Load();
     RecordRun(app.store.Directory(), "loaded notes=" + std::to_string(loaded.state.notes.size()));
     Register(app.instance, NoteClass, NoteView::Proc, CS_DBLCLKS);
@@ -731,7 +744,7 @@ int Run() {
     running = &app;
     for (auto& n : loaded.state.notes) app.Add(std::move(n));
     bool firstRun = !std::filesystem::exists(app.store.Directory() / L"notes.paper") && !loaded.recovered;
-    if (firstRun && !o.create) {
+    if (firstRun && !o.create && !o.restore) {
         Note welcome;
         welcome.id = NewId();
         welcome.width = 330; welcome.height = 340;

@@ -52,7 +52,7 @@ After installation, search for **New paper note** in Start or a launcher that in
 | `--new` | Create a note and start writing |
 | `--style butter\|rose\|parchment` | Paper for a new note |
 | `--text "..."` | Prefill a new note, if the text fits |
-| `--restore` | Restore saved notes without taking focus, also the default |
+| `--restore` | Restore saved notes without taking focus or creating a welcome note |
 | `--quit` | Save and close the running app |
 | `--startup enable` / `--startup disable` | Register or remove sign-in startup |
 | `--help` | Open the quick-reference card |
@@ -74,13 +74,15 @@ Data stays in `%LOCALAPPDATA%\Paperdesk`:
 - `notes.backup.paper` is the previous committed save.
 - `notes.pending.paper` is a temporary file during saving.
 - A damaged primary file is preserved with a `notes.damaged.*.paper` name if recovery succeeds.
-- `last-run.log` records the latest launch, restored note count, readiness, and clean exit. It contains no note text and is overwritten on the next app launch.
+- `last-run.log` records the latest launch, backing storage path, restored note count, readiness, and clean exit. It contains no note text and is overwritten on the next app launch.
 
 The file records paper styles, positions, sizes, text, and block positions. Saves are debounced by 350 milliseconds, flushed to disk, then atomically replaced. Closing an edit, moving a note, and quitting also save. If both the primary and backup are unreadable, the app reports the error and leaves them intact.
 
 Quit Paperdesk before copying a backup over `notes.paper`. These are plain text files, not encrypted storage. The uninstall script removes the app and shortcuts but keeps your notes.
 
 If notes are missing after sign-in, launch **Paperdesk** from Start to restore them. Check that Paperdesk is enabled in Windows Startup apps and that `shell:startup` contains `Paperdesk.lnk`. Run `Paperdesk.exe --startup enable` or rerun the installer to repair its shortcut. A fresh `last-run.log` distinguishes an attempted launch from an app that never started. Windows controls startup timing; verifying registration is not a substitute for testing a real sign-in.
+
+Packaged development tools can redirect AppData into their own private storage. If notes differ between a development launch and sign-in, compare the backing storage paths in `last-run.log`. Preserve both profiles before recovering notes, and verify the normal Windows launch separately. Startup only restores saved notes; it never generates the welcome note. On a new installation, use **New paper note** to create your first note.
 
 ## Build
 

@@ -1,5 +1,14 @@
 # Verification
 
+## Version 0.1.5, 27 October 2026
+
+The reported morning launch did run from the installed Startup shortcut. Its real AppData profile was empty, while the user's saved note existed in the development host's MSIX LocalCache overlay. The two views shared the same apparent LocalAppData path. The previous startup checks had inspected the development host's redirected view, so they did not establish restoration from the real sign-in profile.
+
+Both profiles were backed up before recovery. The saved note and its backup were copied to the real Windows profile; the stale overlay folder was archived rather than deleted. The installed Startup shortcut then launched exactly one process. Inspection outside the overlay confirmed loaded notes=1, ready, and the expected backing directory. The saved file's SHA-256 matched the recovery copy. The old overlay was not recreated. A full reboot/sign-in after this repair remains unverified; no claim is made about reducing Windows' startup delay.
+
+The --restore path now leaves a missing profile empty instead of creating the welcome note. An explicit first launch still creates the welcome. Four process-level regression checks cover missing profiles, explicit first launch, byte-preserving restoration, and intentionally empty desktops. These checks run in the local build script and GitHub Actions. The local build passed all 202 core, 62 rendering, 52 desktop-layer, and four startup checks.
+
+
 ## Version 0.1.4, 26 October 2026
 
 The quick reference was checked in an isolated test profile. Its final layout is a 400 by 316 pixel card at the tested display scale, with eight action/gesture rows. Visual inspection confirmed no title bar, no introductory paragraphs, and a small custom close icon. Native text controls expose the rows through Windows accessibility.

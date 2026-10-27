@@ -36,6 +36,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Desktop test build failed.' }
         & './paperdesk_desktop_tests.exe'
         if ($LASTEXITCODE -ne 0) { throw 'Desktop tests failed.' }
+        & "$root/tests/startup_tests.ps1" -Executable "$build/Paperdesk.exe"
     }
 } finally { Pop-Location }
 Write-Host "Built $build/Paperdesk.exe"
